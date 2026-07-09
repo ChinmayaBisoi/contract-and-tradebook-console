@@ -6,15 +6,36 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
+# Development: Bun runtime, hot reload, full devDependencies
+FROM deps AS development
+WORKDIR /app
+
+ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=development
+ENV PORT=3000
+ENV WATCHPACK_POLLING=true
+
+COPY . .
+RUN bun run db:generate
+
+EXPOSE 3000
+
+CMD ["sh", "-c", "bun run db:generate && bun run dev -- -H 0.0.0.0 -p ${PORT}"]
+
+# Production build: generate Prisma client and create Next.js standalone output
 FROM deps AS builder
 WORKDIR /app
+
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 
 COPY . .
 RUN bun run db:generate
 RUN bun run build
 
-FROM node:22-alpine AS runner
+# Production: minimal Node runtime serving the standalone server
+FROM node:22-alpine AS production
 WORKDIR /app
 
 ENV HOSTNAME=0.0.0.0

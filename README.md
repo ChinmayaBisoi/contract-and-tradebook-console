@@ -70,22 +70,23 @@ bun run build
 
 ## Container
 
-Build the Docker image:
+Development with hot reload:
 
 ```bash
-docker build -t contract-tradebook-console .
+docker compose --profile dev up --build
 ```
 
-Run the image:
+Production image:
 
 ```bash
+docker build --target production -t contract-tradebook-console .
 docker run --rm --env-file .env -p 3000:3000 contract-tradebook-console
 ```
 
-Or use Docker Compose:
+Or run production with Docker Compose:
 
 ```bash
-docker compose up --build
+docker compose --profile prod up --build
 ```
 
 See [docs/containerization.md](docs/containerization.md) for the full container workflow and operational notes.
