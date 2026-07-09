@@ -1,0 +1,2 @@
+-- Baseline migration.
+-- The current Prisma schema does not define any models yet.
