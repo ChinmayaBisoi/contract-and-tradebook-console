@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowRight, ChevronsUpDown, Search } from "lucide-react";
+import type { Metadata } from "next";
 
 import Topbar from "@/components/topbar";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,10 @@ const organisations = [
     focus: "Tradebooks",
   },
 ];
+
+export const metadata: Metadata = {
+  title: "Organisations",
+};
 
 function DashboardPage() {
   return (

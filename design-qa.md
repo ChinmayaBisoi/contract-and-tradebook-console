@@ -14,11 +14,11 @@ console errors checked: no dashboard-specific console errors were available beca
 
 ## Full-View Comparison Evidence
 
-The source visual is an authenticated dashboard-like organisation/workspace table. The implementation route could not be captured in the matching authenticated state. The in-app browser reached `/dashboard`, then redirected to `/` because Clerk reported the browser session as signed out. The saved implementation screenshot therefore shows the landing page, not the dashboard page.
+The source visual is an authenticated dashboard-like organisation table. The implementation route could not be captured in the matching authenticated state. The in-app browser reached `/dashboard`, then redirected to `/` because Clerk reported the browser session as signed out. The saved implementation screenshot therefore shows the landing page, not the dashboard page.
 
 ## Focused Region Comparison Evidence
 
-Focused comparison was not possible because the dashboard content did not render in the browser. Code and automated tests confirm the dashboard component contains the intended header, action button, search controls, non-status filters, and workspace table, but visual QA requires a rendered authenticated state.
+Focused comparison was not possible because the dashboard content did not render in the browser. Code and automated tests confirm the dashboard component contains the intended header, action button, search controls, non-status filters, and ContractView organisation table, but visual QA requires a rendered authenticated state.
 
 ## Findings
 

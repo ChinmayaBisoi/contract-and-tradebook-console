@@ -1,6 +1,6 @@
-# Contract And Tradebook Operations Console
+# ContractView
 
-A Next.js application for contract and tradebook operations workflows.
+Contract and tradebook operations console built with Next.js.
 
 ## Local Development
 
