@@ -1,7 +1,17 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import Home from "@/app/page";
+
+vi.mock("@/components/topbar", () => ({
+  default: () => (
+    <header>
+      <a href="/" aria-label="ContractView home">
+        ContractView
+      </a>
+    </header>
+  ),
+}));
 
 describe("ContractView landing page", () => {
   it("presents the approved hero and calls to action", () => {
