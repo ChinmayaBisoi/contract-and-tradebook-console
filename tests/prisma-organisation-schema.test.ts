@@ -30,39 +30,46 @@ function readEnumBlock(schema: string, enumName: string) {
   return match[1];
 }
 
-function readOrganisationMigration() {
-  const migrationDir = readdirSync(migrationsPath)
+function readOrganisationMigrations() {
+  const migrationDirs = readdirSync(migrationsPath)
     .filter((entry) => entry.includes("organisation"))
-    .sort()
-    .at(-1);
+    .sort();
 
-  if (!migrationDir) {
+  if (migrationDirs.length === 0) {
     throw new Error("No organisation migration directory was found");
   }
 
-  const migrationPath = path.join(
-    migrationsPath,
-    migrationDir,
-    "migration.sql",
-  );
+  return migrationDirs
+    .map((migrationDir) => {
+      const migrationPath = path.join(
+        migrationsPath,
+        migrationDir,
+        "migration.sql",
+      );
 
-  if (!existsSync(migrationPath)) {
-    throw new Error(`Migration file is missing at ${migrationPath}`);
-  }
+      if (!existsSync(migrationPath)) {
+        throw new Error(`Migration file is missing at ${migrationPath}`);
+      }
 
-  return readFileSync(migrationPath, "utf8");
+      return readFileSync(migrationPath, "utf8");
+    })
+    .join("\n");
 }
 
 describe("organisation Prisma schema", () => {
   it("models Clerk-backed organisation memberships", () => {
     const schema = readFileSync(schemaPath, "utf8");
     const roleEnum = readEnumBlock(schema, "OrganisationUserRole");
+    const statusEnum = readEnumBlock(schema, "OrganisationUserStatus");
     const organisation = readModelBlock(schema, "Organisation");
     const organisationUser = readModelBlock(schema, "OrganisationUser");
 
     expect(roleEnum).toContain("OWNER");
     expect(roleEnum).toContain("MANAGER");
     expect(roleEnum).toContain("MEMBER");
+    expect(statusEnum).toContain("ACTIVE");
+    expect(statusEnum).toContain("DISABLED");
+    expect(statusEnum).toContain("REMOVED");
 
     expect(organisation).toMatch(/id\s+String\s+@id\s+@default\(cuid\(\)\)/);
     expect(organisation).toMatch(/name\s+String/);
@@ -71,28 +78,43 @@ describe("organisation Prisma schema", () => {
     expect(organisation).toMatch(/createdAt\s+DateTime\s+@default\(now\(\)\)/);
     expect(organisation).toMatch(/updatedAt\s+DateTime\s+@updatedAt/);
 
-    expect(organisationUser).toMatch(/id\s+String\s+@id\s+@default\(cuid\(\)\)/);
-    expect(organisationUser).toContain("clerkUserId    String");
-    expect(organisationUser).toContain("clerkUserName  String");
-    expect(organisationUser).toContain("clerkUserEmail String");
-    expect(organisationUser).toContain("organisationId String");
-    expect(organisationUser).toContain(
-      "organisation   Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)",
+    expect(organisationUser).toMatch(
+      /id\s+String\s+@id\s+@default\(cuid\(\)\)/,
     );
-    expect(organisationUser).toContain(
-      "role           OrganisationUserRole @default(MEMBER)",
+    expect(organisationUser).toMatch(/clerkUserId\s+String/);
+    expect(organisationUser).toMatch(/clerkUserName\s+String/);
+    expect(organisationUser).toMatch(/clerkUserEmail\s+String/);
+    expect(organisationUser).toMatch(/organisationId\s+String/);
+    expect(organisationUser).toMatch(
+      /organisation\s+Organisation\s+@relation\(fields: \[organisationId\], references: \[id\], onDelete: Cascade, onUpdate: Cascade\)/,
     );
-    expect(organisationUser).toMatch(/createdAt\s+DateTime\s+@default\(now\(\)\)/);
+    expect(organisationUser).toMatch(
+      /role\s+OrganisationUserRole\s+@default\(MEMBER\)/,
+    );
+    expect(organisationUser).toMatch(
+      /status\s+OrganisationUserStatus\s+@default\(ACTIVE\)/,
+    );
+    expect(organisationUser).toMatch(
+      /statusChangedAt\s+DateTime\s+@default\(now\(\)\)/,
+    );
+    expect(organisationUser).toMatch(
+      /createdAt\s+DateTime\s+@default\(now\(\)\)/,
+    );
     expect(organisationUser).toMatch(/updatedAt\s+DateTime\s+@updatedAt/);
-    expect(organisationUser).toContain("@@unique([clerkUserId, organisationId])");
+    expect(organisationUser).toContain(
+      "@@unique([clerkUserId, organisationId])",
+    );
     expect(organisationUser).toContain("@@index([organisationId])");
   });
 
   it("includes a database migration for the organisation tables", () => {
-    const migration = readOrganisationMigration();
+    const migration = readOrganisationMigrations();
 
     expect(migration).toContain(
       "CREATE TYPE \"OrganisationUserRole\" AS ENUM ('OWNER', 'MANAGER', 'MEMBER');",
+    );
+    expect(migration).toContain(
+      "CREATE TYPE \"OrganisationUserStatus\" AS ENUM ('ACTIVE', 'DISABLED', 'REMOVED');",
     );
     expect(migration).toContain('CREATE TABLE "Organisation"');
     expect(migration).toContain('CREATE TABLE "OrganisationUser"');
@@ -101,6 +123,12 @@ describe("organisation Prisma schema", () => {
     expect(migration).toContain('"clerkUserName" TEXT NOT NULL');
     expect(migration).toContain('"clerkUserEmail" TEXT NOT NULL');
     expect(migration).toContain('"organisationId" TEXT NOT NULL');
+    expect(migration).toContain(
+      '"status" "OrganisationUserStatus" NOT NULL DEFAULT \'ACTIVE\'',
+    );
+    expect(migration).toContain(
+      '"statusChangedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    );
     expect(migration).not.toContain(
       'PRIMARY KEY ("clerkUserId","organisationId")',
     );
