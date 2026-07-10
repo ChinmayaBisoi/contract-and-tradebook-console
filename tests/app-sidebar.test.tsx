@@ -43,6 +43,8 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveClass(
       "data-active:bg-primary",
       "data-active:text-primary-foreground",
+      "data-active:hover:bg-primary",
+      "data-active:hover:text-primary-foreground",
     );
   });
 });
