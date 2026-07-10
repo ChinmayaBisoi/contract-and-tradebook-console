@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const workspaces = [
+const organisations = [
   {
     name: "Takeda onboarding testing",
     description: "Counterparty contract intake",
@@ -30,7 +30,7 @@ const workspaces = [
   },
   {
     name: "Demo organisation",
-    description: "Example contract workspace",
+    description: "Example contract organisation",
     role: "Owner",
     created: "26 Mar, 2026",
     focus: "Evidence map",
@@ -60,14 +60,14 @@ function DashboardPage() {
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-4xl font-black tracking-normal text-zinc-950 sm:text-5xl">
-              Your workspaces
+              Your organisations
             </h1>
             <p className="mt-4 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
-              Review the contract and tradebook workspaces you can access.
+              Review the contract and tradebook organisations you can access.
             </p>
           </div>
           <Button className="h-12 w-full px-7 text-base font-bold md:w-auto">
-            Add Workspace
+            Add Organisation
           </Button>
         </div>
 
@@ -75,7 +75,7 @@ function DashboardPage() {
           <div className="relative flex-1">
             <Search className="-translate-y-1/2 absolute top-1/2 left-4 size-5 text-muted-foreground" />
             <Input
-              aria-label="Search workspaces"
+              aria-label="Search organisations"
               className="h-12 rounded-lg border-zinc-200 bg-white pl-12 text-base shadow-none placeholder:text-muted-foreground"
               placeholder="Search by name..."
             />
@@ -95,7 +95,7 @@ function DashboardPage() {
         </div>
 
         <Card className="gap-0 overflow-hidden rounded-lg border-zinc-200 py-0 shadow-none">
-          <Table aria-label="ContractView workspaces">
+          <Table aria-label="ContractView organisations">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="h-16 px-6 text-base font-bold text-muted-foreground">
@@ -117,35 +117,35 @@ function DashboardPage() {
                   Focus
                 </TableHead>
                 <TableHead className="h-16 w-14 px-6">
-                  <span className="sr-only">Open workspace</span>
+                  <span className="sr-only">Open organisation</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {workspaces.map((workspace) => (
-                <TableRow key={workspace.name} className="hover:bg-primary/5">
+              {organisations.map((organisation) => (
+                <TableRow key={organisation.name} className="hover:bg-primary/5">
                   <TableCell className="min-w-[22rem] px-6 py-6">
                     <div>
                       <p className="text-lg font-bold text-zinc-950">
-                        {workspace.name}
+                        {organisation.name}
                       </p>
                       <p className="mt-2 text-base text-muted-foreground">
-                        {workspace.description}
+                        {organisation.description}
                       </p>
                     </div>
                   </TableCell>
                   <TableCell className="px-6 py-6 text-base font-semibold text-muted-foreground">
-                    {workspace.role}
+                    {organisation.role}
                   </TableCell>
                   <TableCell className="px-6 py-6 text-lg text-muted-foreground">
-                    {workspace.created}
+                    {organisation.created}
                   </TableCell>
                   <TableCell className="px-6 py-6 text-base font-semibold text-primary">
-                    {workspace.focus}
+                    {organisation.focus}
                   </TableCell>
                   <TableCell className="px-6 py-6 text-right">
                     <Button
-                      aria-label={`Open ${workspace.name}`}
+                      aria-label={`Open ${organisation.name}`}
                       variant="ghost"
                       size="icon"
                       className="text-muted-foreground hover:text-primary"
