@@ -30,7 +30,18 @@ chown -h deploy:deploy "${CURRENT_LINK}"
 systemctl restart "${SERVICE_NAME}"
 systemctl --no-pager --full status "${SERVICE_NAME}"
 
-curl -fsS "http://127.0.0.1:3000" >/dev/null
+for attempt in {1..10}; do
+  if curl -fsS "http://127.0.0.1:3000" >/dev/null 2>&1; then
+    break
+  fi
+
+  if [[ "${attempt}" -eq 10 ]]; then
+    echo "Service did not become healthy on 127.0.0.1:3000"
+    exit 1
+  fi
+
+  sleep 1
+done
 
 cd "${RELEASES_ROOT}"
 ls -1dt */ 2>/dev/null | awk "NR>${KEEP_RELEASES}" | xargs -r rm -rf
