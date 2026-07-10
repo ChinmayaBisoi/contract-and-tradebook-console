@@ -1,3 +1,7 @@
+import Logo from "@/components/logo";
+import { Button } from "@/components/ui/button";
+import { SignInButton } from "@clerk/nextjs";
+
 const workflowSteps = [
   "import tradebook",
   "normalize rows",
@@ -64,24 +68,15 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(31,124,168,0.10),transparent_34rem),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] text-foreground">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
-        <a href="#" className="flex items-center gap-3" aria-label="ContractView home">
-          <span className="flex size-8 items-center justify-center border border-primary/25 bg-primary text-sm font-black text-primary-foreground">
-            CV
-          </span>
-          <span className="text-base font-black tracking-normal text-zinc-950">
-            ContractView
-          </span>
-        </a>
+        <Logo />
         <nav aria-label="Primary navigation" className="flex items-center gap-5 text-sm font-medium text-zinc-600 sm:gap-7">
           <a href="#features" className="hidden transition-colors hover:text-zinc-950 sm:inline">
             Features
           </a>
-          <a href="#workflow" className="hidden transition-colors hover:text-zinc-950 sm:inline">
-            Workflow
-          </a>
-          <a href="#footer" className="transition-colors hover:text-zinc-950">
-            Sign in
-          </a>
+
+          <SignInButton>
+            <Button>Sign in</Button>
+          </SignInButton>
         </nav>
       </header>
 
