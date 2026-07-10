@@ -6,6 +6,10 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { clerkMocks } from "@/tests/mocks/clerk";
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/dashboard",
+}));
+
 vi.mock("@/components/nav-user", () => ({
   NavUser: () => <div>Nav user</div>,
 }));
@@ -27,5 +31,18 @@ describe("AppSidebar", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
 
     expect(clerkMocks.openUserProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("highlights the active sidebar item with the primary background", () => {
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveClass(
+      "data-active:bg-primary",
+      "data-active:text-primary-foreground",
+    );
   });
 });
