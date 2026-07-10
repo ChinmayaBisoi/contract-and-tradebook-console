@@ -11,6 +11,8 @@ import { metadata } from "@/app/layout";
 describe("root metadata", () => {
   it("names the application ContractView", () => {
     expect(metadata.title).toBe("ContractView");
-    expect(metadata.description).toBe("Contract and tradebook operations console.");
+    expect(metadata.description).toBe(
+      "Contract and tradebook operations console.",
+    );
   });
 });
