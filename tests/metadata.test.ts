@@ -10,9 +10,12 @@ import { metadata } from "@/app/layout";
 
 describe("root metadata", () => {
   it("names the application ContractView", () => {
-    expect(metadata.title).toBe("ContractView");
+    expect(metadata.title).toEqual({
+      default: "ContractView",
+      template: "%s · ContractView",
+    });
     expect(metadata.description).toBe(
-      "Contract and tradebook operations console.",
+      "ContractView — contract and tradebook operations console.",
     );
   });
 });

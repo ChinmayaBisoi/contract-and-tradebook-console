@@ -18,8 +18,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ContractView",
-  description: "Contract and tradebook operations console.",
+  title: {
+    default: "ContractView",
+    template: "%s · ContractView",
+  },
+  description: "ContractView — contract and tradebook operations console.",
 };
 
 export default function RootLayout({

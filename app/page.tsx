@@ -74,22 +74,22 @@ export default function Home() {
       <section className="mx-auto grid w-full max-w-6xl gap-12 px-5 pb-16 pt-10 sm:px-8 lg:grid-cols-[1fr_0.92fr] lg:items-center lg:pb-24 lg:pt-16">
         <div className="max-w-3xl">
           <p className="mb-5 inline-flex border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-normal text-primary">
-            Contract and tradebook operations console
+            ContractView
           </p>
           <h1 className="max-w-4xl text-5xl font-black leading-[0.96] tracking-normal text-zinc-950 sm:text-6xl lg:text-7xl">
             Contracts, trades, and evidence in one calm view
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-600">
-            A focused operations console for reviewing contract metadata,
-            tradebook rows, exceptions, and audit context without spreadsheet
-            drift.
+            ContractView is a focused operations console for reviewing contract
+            metadata, tradebook rows, exceptions, and audit context without
+            spreadsheet drift.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
               href="#workflow"
               className="inline-flex h-12 items-center justify-center border border-primary bg-primary px-5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/85"
             >
-              Open Console
+              Open ContractView
             </a>
             <a
               href="#workflow"

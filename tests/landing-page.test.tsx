@@ -28,10 +28,12 @@ describe("ContractView landing page", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "A focused operations console for reviewing contract metadata, tradebook rows, exceptions, and audit context without spreadsheet drift.",
+        "ContractView is a focused operations console for reviewing contract metadata, tradebook rows, exceptions, and audit context without spreadsheet drift.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open Console" })).toHaveAttribute(
+    expect(
+      screen.getByRole("link", { name: "Open ContractView" }),
+    ).toHaveAttribute(
       "href",
       "#workflow",
     );
