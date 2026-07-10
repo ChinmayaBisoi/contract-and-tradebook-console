@@ -9,6 +9,42 @@ No Docker images are used in deployment.
 
 ## 1) Provision infrastructure
 
+### Option A: AWS CLI (recommended for account 344626518162)
+
+From `my-app`:
+
+```bash
+# One-time: configure AWS profile (SSO or access keys)
+./scripts/aws/setup-profile.sh sso https://your-org.awsapps.com/start us-east-1
+aws sso login --profile contract-console
+
+# Or with IAM access keys:
+./scripts/aws/setup-profile.sh keys
+
+# Provision staging + production EC2, EIPs, security groups, IAM
+AWS_PROFILE=contract-console ./scripts/aws/provision.sh
+
+# Bootstrap both instances
+./scripts/aws/bootstrap-instances.sh <staging-ip> <production-ip>
+```
+
+`provision.sh` creates:
+
+- One EC2 for `staging`
+- One EC2 for `production`
+- Elastic IP per instance
+- Security groups (22, 80, 443)
+- IAM role/profile with SSM access
+- EC2 key pair from `~/.ssh/contract-console-deploy.pub`
+
+Destroy everything:
+
+```bash
+AWS_PROFILE=contract-console ./scripts/aws/provision.sh --destroy
+```
+
+### Option B: Terraform
+
 From `my-app/infra`:
 
 ```bash

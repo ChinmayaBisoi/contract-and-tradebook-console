@@ -14,7 +14,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 dnf update -y
-dnf install -y nginx git rsync tar curl
+dnf install -y nginx git rsync tar
 
 curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
 dnf install -y nodejs
@@ -28,6 +28,19 @@ if ! getent group "${APP_GROUP}" >/dev/null 2>&1; then
 fi
 
 usermod -a -G "${APP_GROUP}" "${APP_USER}"
+
+DEFAULT_SSH_USER="ec2-user"
+if [[ -f "/home/${DEFAULT_SSH_USER}/.ssh/authorized_keys" ]]; then
+  install -d -m 700 -o "${APP_USER}" -g "${APP_GROUP}" "/home/${APP_USER}/.ssh"
+  cp "/home/${DEFAULT_SSH_USER}/.ssh/authorized_keys" "/home/${APP_USER}/.ssh/authorized_keys"
+  chown "${APP_USER}:${APP_GROUP}" "/home/${APP_USER}/.ssh/authorized_keys"
+  chmod 600 "/home/${APP_USER}/.ssh/authorized_keys"
+fi
+
+cat > /etc/sudoers.d/contract-console-deploy <<'EOF'
+deploy ALL=(ALL) NOPASSWD: /bin/bash /opt/contract-console/releases/*/scripts/ec2/deploy.sh *, /usr/bin/bash /opt/contract-console/releases/*/scripts/ec2/deploy.sh *, /usr/bin/systemctl, /bin/ln, /usr/bin/chown, /usr/bin/curl, /usr/bin/rm
+EOF
+chmod 440 /etc/sudoers.d/contract-console-deploy
 
 mkdir -p "${APP_ROOT}/releases" "${APP_ROOT}/shared" "${ENV_ROOT}"
 chown -R "${APP_USER}:${APP_GROUP}" "${APP_ROOT}"
