@@ -42,5 +42,6 @@ vi.mock("@clerk/nextjs", () => ({
   }),
   useClerk: () => ({
     signOut: vi.fn(),
+    openUserProfile: vi.fn(),
   }),
 }));
