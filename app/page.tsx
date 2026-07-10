@@ -1,6 +1,8 @@
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import Logo from "@/components/logo";
 import { Button } from "@/components/ui/button";
-import { SignInButton } from "@clerk/nextjs";
+import UserAuthButton from "@/components/signin";
+import Topbar from "@/components/topbar";
 
 const workflowSteps = [
   "import tradebook",
@@ -67,18 +69,7 @@ const features = [
 export default function Home() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(31,124,168,0.10),transparent_34rem),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] text-foreground">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8">
-        <Logo />
-        <nav aria-label="Primary navigation" className="flex items-center gap-5 text-sm font-medium text-zinc-600 sm:gap-7">
-          <a href="#features" className="hidden transition-colors hover:text-zinc-950 sm:inline">
-            Features
-          </a>
-
-          <SignInButton>
-            <Button>Sign in</Button>
-          </SignInButton>
-        </nav>
-      </header>
+      <Topbar isLandingPage={true} />
 
       <section className="mx-auto grid w-full max-w-6xl gap-12 px-5 pb-16 pt-10 sm:px-8 lg:grid-cols-[1fr_0.92fr] lg:items-center lg:pb-24 lg:pt-16">
         <div className="max-w-3xl">
@@ -129,9 +120,14 @@ export default function Home() {
               ["Matches", "92%"],
               ["Exceptions", "14"],
             ].map(([label, value]) => (
-              <div key={label} className="border-r border-zinc-200 p-4 last:border-r-0">
+              <div
+                key={label}
+                className="border-r border-zinc-200 p-4 last:border-r-0"
+              >
                 <p className="text-xs font-medium text-zinc-500">{label}</p>
-                <p className="mt-1 text-2xl font-black text-zinc-950">{value}</p>
+                <p className="mt-1 text-2xl font-black text-zinc-950">
+                  {value}
+                </p>
               </div>
             ))}
           </div>
@@ -170,11 +166,16 @@ export default function Home() {
         <div className="border border-zinc-200 bg-zinc-950 p-4 font-mono text-sm text-zinc-100">
           <div className="mb-4 flex items-center justify-between gap-4 border-b border-white/10 pb-3">
             <span className="text-zinc-400">$ contractview run</span>
-            <span className="text-primary-foreground">review-ready in one pass</span>
+            <span className="text-primary-foreground">
+              review-ready in one pass
+            </span>
           </div>
           <div className="grid gap-2 md:grid-cols-5">
             {workflowSteps.map((step, index) => (
-              <div key={step} className="border border-white/10 bg-white/[0.03] p-3">
+              <div
+                key={step}
+                className="border border-white/10 bg-white/[0.03] p-3"
+              >
                 <span className="text-zinc-500">0{index + 1}</span>
                 <p className="mt-2 text-zinc-50">{step}</p>
               </div>
@@ -204,8 +205,13 @@ export default function Home() {
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <article key={feature.title} className="border border-zinc-200 bg-white p-5">
-              <h3 className="text-base font-black text-zinc-950">{feature.title}</h3>
+            <article
+              key={feature.title}
+              className="border border-zinc-200 bg-white p-5"
+            >
+              <h3 className="text-base font-black text-zinc-950">
+                {feature.title}
+              </h3>
               <p className="mt-3 text-sm leading-6 text-zinc-600">
                 {feature.description}
               </p>
@@ -216,7 +222,7 @@ export default function Home() {
 
       <footer
         id="footer"
-        className="border-t border-zinc-200 bg-white/75 px-5 py-8 sm:px-8"
+        className="border-t border-zinc-200 bg-white/75 px-5 py-8 sm:px-8 max-w-6xl mx-auto"
       >
         <div className="mx-auto flex w-full max-w-6xl flex-col justify-between gap-4 text-sm text-zinc-600 sm:flex-row sm:items-center">
           <p>
@@ -230,7 +236,7 @@ export default function Home() {
             <a href="#workflow" className="hover:text-zinc-950">
               Workflow
             </a>
-            <a href="#" className="hover:text-zinc-950">
+            <a href="/sign-in" className="hover:text-zinc-950">
               Sign in
             </a>
           </div>

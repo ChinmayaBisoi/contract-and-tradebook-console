@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 
 describe("cn", () => {
   it("merges conditional class names and resolves Tailwind conflicts", () => {
-    expect(cn("px-2", false && "hidden", "px-4", ["text-sm"])).toBe("px-4 text-sm");
+    expect(cn("px-2", false && "hidden", "px-4", ["text-sm"])).toBe(
+      "px-4 text-sm",
+    );
   });
 });

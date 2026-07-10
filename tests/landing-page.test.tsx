@@ -34,7 +34,9 @@ describe("ContractView landing page", () => {
   it("shows the workflow strip and representative console rows", () => {
     render(<Home />);
 
-    const workflow = screen.getByRole("region", { name: "ContractView workflow" });
+    const workflow = screen.getByRole("region", {
+      name: "ContractView workflow",
+    });
     expect(within(workflow).getByText("import tradebook")).toBeInTheDocument();
     expect(within(workflow).getByText("normalize rows")).toBeInTheDocument();
     expect(within(workflow).getByText("match contracts")).toBeInTheDocument();
@@ -49,7 +51,9 @@ describe("ContractView landing page", () => {
   it("renders the six approved feature cards", () => {
     render(<Home />);
 
-    const features = screen.getByRole("region", { name: "ContractView features" });
+    const features = screen.getByRole("region", {
+      name: "ContractView features",
+    });
     [
       "Contract metadata review",
       "Tradebook reconciliation",
@@ -58,7 +62,9 @@ describe("ContractView landing page", () => {
       "Import/export workflow",
       "Role-aware review",
     ].forEach((name) => {
-      expect(within(features).getByRole("heading", { name })).toBeInTheDocument();
+      expect(
+        within(features).getByRole("heading", { name }),
+      ).toBeInTheDocument();
     });
   });
 });
