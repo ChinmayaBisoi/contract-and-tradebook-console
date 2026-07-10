@@ -17,7 +17,7 @@ describe("DashboardPage", () => {
 
     expect(screen.getByText("ContractView")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Documents" }),
+      screen.getByRole("heading", { name: "Dashboard" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Total Revenue")).toBeInTheDocument();
     expect(screen.getByText("Chart area")).toBeInTheDocument();
@@ -31,6 +31,6 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("Lifecycle")).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.queryByText("Search")).not.toBeInTheDocument();
-    expect(screen.queryByText("Documents", { selector: "span" })).toBeNull();
+    expect(screen.queryByText("Dashboard", { selector: "span" })).toBeNull();
   });
 });
