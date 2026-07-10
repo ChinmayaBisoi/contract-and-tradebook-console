@@ -1,61 +1,36 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "@/app/(protected)/dashboard/page";
 
-vi.mock("@/components/topbar", () => ({
-  default: () => <header>ContractView</header>,
+vi.mock("@/components/chart-area-interactive", () => ({
+  ChartAreaInteractive: () => <div>Chart area</div>,
+}));
+
+vi.mock("@/components/data-table", () => ({
+  DataTable: () => <div data-testid="data-table">Data table</div>,
 }));
 
 describe("DashboardPage", () => {
-  it("renders the dashboard header, action, search, filters, and organisation table", () => {
+  it("renders the dashboard layout with ContractView branding and main content", () => {
     render(<DashboardPage />);
 
+    expect(screen.getByText("ContractView")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "Your organisations" }),
+      screen.getByRole("heading", { name: "Documents" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Review the contract and tradebook organisations you can access.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Add Organisation" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Total Revenue")).toBeInTheDocument();
+    expect(screen.getByText("Chart area")).toBeInTheDocument();
+    expect(screen.getByTestId("data-table")).toBeInTheDocument();
+    expect(screen.getByText("Test User")).toBeInTheDocument();
+    expect(screen.getByText("test@example.com")).toBeInTheDocument();
 
-    expect(
-      screen.getByPlaceholderText("Search by name..."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Contracts" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Tradebooks" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
-
-    const table = screen.getByRole("table", {
-      name: "ContractView organisations",
-    });
-    ["Name", "Role", "Created", "Focus"].forEach((heading) => {
-      expect(
-        within(table).getByRole("columnheader", { name: heading }),
-      ).toBeInTheDocument();
-    });
-
-    [
-      "Takeda onboarding testing",
-      "No Credit Chinmaya's Org",
-      "Demo organisation",
-      "AI Pilot Phase Evaluation 9 Feb 2026",
-      "AI testing projects",
-    ].forEach((organisationName) => {
-      expect(within(table).getByText(organisationName)).toBeInTheDocument();
-    });
-
-    expect(screen.queryByText("Active")).not.toBeInTheDocument();
-    expect(screen.queryByText("Inactive")).not.toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "Status" })).toBeNull();
+    expect(screen.queryByText("Quick Create")).not.toBeInTheDocument();
+    expect(screen.queryByText("Analytics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Projects")).not.toBeInTheDocument();
+    expect(screen.queryByText("Lifecycle")).not.toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.queryByText("Search")).not.toBeInTheDocument();
+    expect(screen.queryByText("Documents", { selector: "span" })).toBeNull();
   });
 });

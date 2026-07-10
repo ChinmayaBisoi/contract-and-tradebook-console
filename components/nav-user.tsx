@@ -1,5 +1,7 @@
 "use client"
 
+import { useClerk, useUser } from "@clerk/nextjs"
+
 import {
   Avatar,
   AvatarFallback,
@@ -20,18 +22,40 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { EllipsisVerticalIcon, CircleUserRoundIcon, CreditCardIcon, BellIcon, LogOutIcon } from "lucide-react"
+import {
+  EllipsisVerticalIcon,
+  CircleUserRoundIcon,
+  CreditCardIcon,
+  BellIcon,
+  LogOutIcon,
+} from "lucide-react"
+import UserAuthButton from "./user-auth-button"
 
-export function NavUser({
-  user,
-}: {
-  user: {
-    name: string
-    email: string
-    avatar: string
-  }
-}) {
+function getInitials(name: string) {
+  return (
+    name
+      .split(" ")
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "U"
+  )
+}
+
+export function NavUser() {
+  const { isLoaded, user } = useUser()
+  const { signOut } = useClerk()
   const { isMobile } = useSidebar()
+
+  if (!isLoaded || !user) {
+    return null
+  }
+
+  const name = user.fullName ?? "User"
+  const email = user.primaryEmailAddress?.emailAddress ?? ""
+  const avatar = user.imageUrl
+  const initials = getInitials(name)
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -41,14 +65,15 @@ export function NavUser({
               <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
             }
           >
-            <Avatar className="size-8 rounded-lg grayscale">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+            <UserAuthButton />
+            <Avatar className="size-8 rounded-lg">
+              <AvatarImage src={avatar} alt={name} />
+              <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user.name}</span>
+              <span className="truncate font-medium">{name}</span>
               <span className="truncate text-xs text-foreground/70">
-                {user.email}
+                {email}
               </span>
             </div>
             <EllipsisVerticalIcon className="ml-auto size-4" />
@@ -63,13 +88,15 @@ export function NavUser({
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                   <Avatar className="size-8">
-                    <AvatarImage src={user.avatar} alt={user.name} />
-                    <AvatarFallback className="rounded-lg">CN</AvatarFallback>
+                    <AvatarImage src={avatar} alt={name} />
+                    <AvatarFallback className="rounded-lg">
+                      {initials}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">{user.name}</span>
+                    <span className="truncate font-medium">{name}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {user.email}
+                      {email}
                     </span>
                   </div>
                 </div>
@@ -78,25 +105,21 @@ export function NavUser({
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
-                <CircleUserRoundIcon
-                />
+                <CircleUserRoundIcon />
                 Account
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCardIcon
-                />
+              {/* <DropdownMenuItem>
+                <CreditCardIcon />
                 Billing
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <BellIcon
-                />
+                <BellIcon />
                 Notifications
-              </DropdownMenuItem>
+              </DropdownMenuItem> */}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOutIcon
-              />
+            <DropdownMenuItem onClick={() => signOut()}>
+              <LogOutIcon />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>
