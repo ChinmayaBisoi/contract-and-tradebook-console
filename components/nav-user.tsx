@@ -30,6 +30,7 @@ import {
   LogOutIcon,
 } from "lucide-react"
 import UserAuthButton from "./user-auth-button"
+import ComingSoon from "./coming-soon"
 
 function getInitials(name: string) {
   return (
@@ -44,7 +45,7 @@ function getInitials(name: string) {
 
 export function NavUser() {
   const { isLoaded, user } = useUser()
-  const { signOut } = useClerk()
+  const { signOut, openUserProfile } = useClerk()
   const { isMobile } = useSidebar()
 
   if (!isLoaded || !user) {
@@ -65,7 +66,7 @@ export function NavUser() {
               <SidebarMenuButton size="lg" className="aria-expanded:bg-muted" />
             }
           >
-            <UserAuthButton />
+            {/* <UserAuthButton /> */}
             <Avatar className="size-8 rounded-lg">
               <AvatarImage src={avatar} alt={name} />
               <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
@@ -104,18 +105,20 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openUserProfile()}>
                 <CircleUserRoundIcon />
                 Account
               </DropdownMenuItem>
-              {/* <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <CreditCardIcon />
                 Billing
+                <ComingSoon className="ml-auto" />
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <BellIcon />
                 Notifications
-              </DropdownMenuItem> */}
+                <ComingSoon className="ml-auto" />
+              </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut()}>
