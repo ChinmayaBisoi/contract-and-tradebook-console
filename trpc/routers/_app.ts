@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { baseProcedure, createTRPCRouter } from "@/trpc/init";
+import { organisationRouter } from "@/trpc/routers/organisation";
 
 export const appRouter = createTRPCRouter({
+  organisation: organisationRouter,
   hello: baseProcedure
     .input(
       z.object({

@@ -24,16 +24,24 @@ enum OrganisationUserRole {
   MEMBER
 }
 
+enum OrganisationUserStatus {
+  ACTIVE
+  DISABLED
+  REMOVED
+}
+
 model OrganisationUser {
-  id             String               @id @default(cuid())
-  clerkUserId    String
-  clerkUserName  String
-  clerkUserEmail String
-  organisationId String
-  organisation   Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  role           OrganisationUserRole @default(MEMBER)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  id              String                 @id @default(cuid())
+  clerkUserId     String
+  clerkUserName   String
+  clerkUserEmail  String
+  organisationId  String
+  organisation    Organisation           @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  role            OrganisationUserRole   @default(MEMBER)
+  status          OrganisationUserStatus @default(ACTIVE)
+  statusChangedAt DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   @@unique([clerkUserId, organisationId])
   @@index([organisationId])
