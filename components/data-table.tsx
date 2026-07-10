@@ -405,7 +405,7 @@ export function DataTable({
             { label: "Outline", value: "outline" },
             { label: "Past Performance", value: "past-performance" },
             { label: "Key Personnel", value: "key-personnel" },
-            { label: "Focus Documents", value: "focus-documents" },
+            { label: "Focus Dashboard", value: "focus-dashboard" },
           ]}
         >
           <SelectTrigger
@@ -420,7 +420,7 @@ export function DataTable({
               <SelectItem value="outline">Outline</SelectItem>
               <SelectItem value="past-performance">Past Performance</SelectItem>
               <SelectItem value="key-personnel">Key Personnel</SelectItem>
-              <SelectItem value="focus-documents">Focus Documents</SelectItem>
+              <SelectItem value="focus-dashboard">Focus Dashboard</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
@@ -432,7 +432,7 @@ export function DataTable({
           <TabsTrigger value="key-personnel">
             Key Personnel <Badge variant="secondary">2</Badge>
           </TabsTrigger>
-          <TabsTrigger value="focus-documents">Focus Documents</TabsTrigger>
+          <TabsTrigger value="focus-dashboard">Focus Dashboard</TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-2">
           <DropdownMenu>
@@ -496,9 +496,9 @@ export function DataTable({
                           {header.isPlaceholder
                             ? null
                             : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext()
-                              )}
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
                         </TableHead>
                       )
                     })}
@@ -627,7 +627,7 @@ export function DataTable({
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
       </TabsContent>
       <TabsContent
-        value="focus-documents"
+        value="focus-dashboard"
         className="flex flex-col px-4 lg:px-6"
       >
         <div className="aspect-video w-full flex-1 rounded-lg border border-dashed"></div>
@@ -775,7 +775,7 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                     },
                     { label: "Design", value: "Design" },
                     { label: "Capabilities", value: "Capabilities" },
-                    { label: "Focus Documents", value: "Focus Documents" },
+                    { label: "Focus Dashboard", value: "Focus Dashboard" },
                     { label: "Narrative", value: "Narrative" },
                     { label: "Cover Page", value: "Cover Page" },
                   ]}
@@ -796,8 +796,8 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
                       </SelectItem>
                       <SelectItem value="Design">Design</SelectItem>
                       <SelectItem value="Capabilities">Capabilities</SelectItem>
-                      <SelectItem value="Focus Documents">
-                        Focus Documents
+                      <SelectItem value="Focus Dashboard">
+                        Focus Dashboard
                       </SelectItem>
                       <SelectItem value="Narrative">Narrative</SelectItem>
                       <SelectItem value="Cover Page">Cover Page</SelectItem>

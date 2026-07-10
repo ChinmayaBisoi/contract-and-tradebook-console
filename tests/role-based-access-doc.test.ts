@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const docPath = path.resolve(__dirname, "../docs/role-based-access.md");
 
 describe("role based access documentation", () => {
-  it("documents organisation permissions as a role matrix", () => {
+  it("dashboard organisation permissions as a role matrix", () => {
     expect(existsSync(docPath)).toBe(true);
 
     const doc = readFileSync(docPath, "utf8");

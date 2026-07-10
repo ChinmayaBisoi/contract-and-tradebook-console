@@ -2,6 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import React from "react";
 import { vi } from "vitest";
 
+import { clerkMocks } from "./tests/mocks/clerk";
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: vi.fn().mockImplementation((query: string) => ({
@@ -41,7 +43,7 @@ vi.mock("@clerk/nextjs", () => ({
     },
   }),
   useClerk: () => ({
-    signOut: vi.fn(),
-    openUserProfile: vi.fn(),
+    signOut: clerkMocks.signOut,
+    openUserProfile: clerkMocks.openUserProfile,
   }),
 }));

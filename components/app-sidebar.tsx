@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import * as React from "react"
+import { useClerk } from "@clerk/nextjs"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
@@ -20,8 +21,10 @@ import {
   Settings2Icon,
 } from "lucide-react"
 
-const data = {
-  navMain: [
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { openUserProfile } = useClerk()
+
+  const navMain = [
     {
       title: "Dashboard",
       url: "/dashboard",
@@ -29,35 +32,16 @@ const data = {
     },
     {
       title: "Team",
-      url: "#",
+      url: "/team",
       icon: <UsersIcon />,
     },
     {
       title: "Settings",
-      url: "#",
       icon: <Settings2Icon />,
+      onClick: () => openUserProfile(),
     },
-  ],
-  // documents: [
-  //   {
-  //     name: "Data Library",
-  //     url: "#",
-  //     icon: <DatabaseIcon />,
-  //   },
-  //   {
-  //     name: "Reports",
-  //     url: "#",
-  //     icon: <FileChartColumnIcon />,
-  //   },
-  //   {
-  //     name: "Word Assistant",
-  //     url: "#",
-  //     icon: <FileIcon />,
-  //   },
-  // ],
-}
+  ]
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -76,8 +60,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        {/* <NavDocuments items={data.documents} /> */}
+        <NavMain items={navMain} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
