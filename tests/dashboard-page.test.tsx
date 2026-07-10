@@ -31,6 +31,8 @@ describe("DashboardPage", () => {
     expect(screen.queryByText("Lifecycle")).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
     expect(screen.queryByText("Search")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dashboard", { selector: "span" })).toBeNull();
+    expect(
+      screen.getByText("Dashboard", { selector: "span" }),
+    ).toBeInTheDocument();
   });
 });
