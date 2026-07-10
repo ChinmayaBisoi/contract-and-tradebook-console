@@ -47,3 +47,6 @@ next-env.d.ts
 
 # local design brainstorming scratchpad
 .superpowers/
+
+# clerk configuration (can include secrets)
+/.clerk/
