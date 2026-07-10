@@ -93,16 +93,22 @@ function Carousel({
     setApi(api)
   }, [api, setApi])
 
-  React.useEffect(() => {
+  const syncCarouselState = React.useCallback(() => {
     if (!api) return
     onSelect(api)
-    api.on("reInit", onSelect)
-    api.on("select", onSelect)
+  }, [api, onSelect])
+
+  React.useEffect(() => {
+    if (!api) return
+    queueMicrotask(syncCarouselState)
+    api.on("reInit", syncCarouselState)
+    api.on("select", syncCarouselState)
 
     return () => {
-      api?.off("select", onSelect)
+      api.off("reInit", syncCarouselState)
+      api.off("select", syncCarouselState)
     }
-  }, [api, onSelect])
+  }, [api, syncCarouselState])
 
   return (
     <CarouselContext.Provider
