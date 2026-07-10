@@ -8,19 +8,19 @@ vi.mock("@/components/topbar", () => ({
 }));
 
 describe("DashboardPage", () => {
-  it("renders the dashboard header, action, search, filters, and workspace table", () => {
+  it("renders the dashboard header, action, search, filters, and organisation table", () => {
     render(<DashboardPage />);
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Your workspaces" }),
+      screen.getByRole("heading", { level: 1, name: "Your organisations" }),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Review the contract and tradebook workspaces you can access.",
+        "Review the contract and tradebook organisations you can access.",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Add Workspace" }),
+      screen.getByRole("button", { name: "Add Organisation" }),
     ).toBeInTheDocument();
 
     expect(
@@ -36,7 +36,7 @@ describe("DashboardPage", () => {
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
 
     const table = screen.getByRole("table", {
-      name: "ContractView workspaces",
+      name: "ContractView organisations",
     });
     ["Name", "Role", "Created", "Focus"].forEach((heading) => {
       expect(
@@ -50,8 +50,8 @@ describe("DashboardPage", () => {
       "Demo organisation",
       "AI Pilot Phase Evaluation 9 Feb 2026",
       "AI testing projects",
-    ].forEach((workspaceName) => {
-      expect(within(table).getByText(workspaceName)).toBeInTheDocument();
+    ].forEach((organisationName) => {
+      expect(within(table).getByText(organisationName)).toBeInTheDocument();
     });
 
     expect(screen.queryByText("Active")).not.toBeInTheDocument();
