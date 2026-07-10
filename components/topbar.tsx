@@ -1,6 +1,6 @@
 import React from 'react'
 import Logo from './logo'
-import UserAuthButton from './signin'
+import UserAuthButton from './user-auth-button'
 
 function Topbar({ isLandingPage = false }: { isLandingPage?: boolean }) {
     return (
