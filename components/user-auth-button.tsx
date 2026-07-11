@@ -6,7 +6,7 @@ function UserAuthButton({ showDashboard = false }: { showDashboard?: boolean }) 
     return (
         <>
             <Show when="signed-out">
-                <SignInButton>
+                <SignInButton forceRedirectUrl="/dashboard">
                     <Button>Sign in</Button>
                 </SignInButton>
             </Show>

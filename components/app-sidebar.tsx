@@ -30,11 +30,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       url: "/dashboard",
       icon: <LayoutDashboardIcon />,
     },
-    {
-      title: "Team",
-      url: "/team",
-      icon: <UsersIcon />,
-    },
+    // {
+    //   title: "Team",
+    //   url: "/team",
+    //   icon: <UsersIcon />,
+    // },
     {
       title: "Settings",
       icon: <Settings2Icon />,
