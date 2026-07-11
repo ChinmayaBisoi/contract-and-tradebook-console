@@ -43,7 +43,10 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        <ClerkProvider>
+        <ClerkProvider
+          signInForceRedirectUrl="/dashboard"
+          signInFallbackRedirectUrl="/dashboard"
+        >
           <TRPCReactProvider>{children}</TRPCReactProvider>
         </ClerkProvider>
       </body>
