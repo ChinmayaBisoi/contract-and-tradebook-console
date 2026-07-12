@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import {
   SidebarGroup,
@@ -9,17 +9,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
 
 export type NavMainItem = {
-  title: string
-  icon?: React.ReactNode
-  url?: string
-  onClick?: () => void
-}
+  title: string;
+  icon?: React.ReactNode;
+  url?: string;
+  onClick?: () => void;
+};
 
 export function NavMain({ items }: { items: NavMainItem[] }) {
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   return (
     <SidebarGroup>
@@ -51,5 +51,5 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
         </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
-  )
+  );
 }

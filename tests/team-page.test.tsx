@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import TeamPage from "@/app/(protected)/team/page";
 
@@ -7,7 +7,9 @@ describe("TeamPage", () => {
   it("renders the team page with mock members", () => {
     render(<TeamPage />);
 
-    expect(screen.getByRole("heading", { name: "Team", level: 1 })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Team", level: 1 }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Manage organisation members, roles, and access."),
     ).toBeInTheDocument();

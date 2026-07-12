@@ -1,12 +1,14 @@
-"use client"
+"use client";
 
-import { useClerk, useUser } from "@clerk/nextjs"
-
+import { useClerk, useUser } from "@clerk/nextjs";
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+  BellIcon,
+  CircleUserRoundIcon,
+  CreditCardIcon,
+  EllipsisVerticalIcon,
+  LogOutIcon,
+} from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,22 +17,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@/components/ui/sidebar"
-import {
-  EllipsisVerticalIcon,
-  CircleUserRoundIcon,
-  CreditCardIcon,
-  BellIcon,
-  LogOutIcon,
-} from "lucide-react"
-import UserAuthButton from "./user-auth-button"
-import ComingSoon from "./coming-soon"
+} from "@/components/ui/sidebar";
+import ComingSoon from "./coming-soon";
 
 function getInitials(name: string) {
   return (
@@ -40,22 +34,22 @@ function getInitials(name: string) {
       .join("")
       .slice(0, 2)
       .toUpperCase() || "U"
-  )
+  );
 }
 
 export function NavUser() {
-  const { isLoaded, user } = useUser()
-  const { signOut, openUserProfile } = useClerk()
-  const { isMobile } = useSidebar()
+  const { isLoaded, user } = useUser();
+  const { signOut, openUserProfile } = useClerk();
+  const { isMobile } = useSidebar();
 
   if (!isLoaded || !user) {
-    return null
+    return null;
   }
 
-  const name = user.fullName ?? "User"
-  const email = user.primaryEmailAddress?.emailAddress ?? ""
-  const avatar = user.imageUrl
-  const initials = getInitials(name)
+  const name = user.fullName ?? "User";
+  const email = user.primaryEmailAddress?.emailAddress ?? "";
+  const avatar = user.imageUrl;
+  const initials = getInitials(name);
 
   return (
     <SidebarMenu>
@@ -129,5 +123,5 @@ export function NavUser() {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }

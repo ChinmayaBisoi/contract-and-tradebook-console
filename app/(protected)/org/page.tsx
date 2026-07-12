@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 function OrgPage() {
-    redirect("/");
+  redirect("/");
 }
 
 export default OrgPage;

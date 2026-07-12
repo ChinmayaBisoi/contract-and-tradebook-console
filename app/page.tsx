@@ -1,7 +1,3 @@
-import { Show, SignInButton, UserButton } from "@clerk/nextjs";
-import Logo from "@/components/logo";
-import { Button } from "@/components/ui/button";
-import UserAuthButton from "@/components/user-auth-button";
 import Topbar from "@/components/topbar";
 
 const workflowSteps = [
