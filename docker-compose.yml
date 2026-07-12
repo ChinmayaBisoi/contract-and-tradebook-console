@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contractview
+      POSTGRES_PASSWORD: contractview
+      POSTGRES_DB: contractview_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contractview -d contractview_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app:
     build:
       context: .
@@ -33,3 +50,4 @@ services:
 
 volumes:
   app_dev_node_modules:
+  postgres_data:
