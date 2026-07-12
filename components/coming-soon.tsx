@@ -1,10 +1,12 @@
-import { cn } from '@/lib/utils'
-import { ClassValue } from 'clsx'
+import type { ClassValue } from "clsx";
+import { cn } from "@/lib/utils";
 
 function ComingSoon({ className }: { className?: ClassValue }) {
-    return (
-        <span className={cn("text-xs text-muted-foreground", className)}>Coming Soon</span>
-    )
+  return (
+    <span className={cn("text-xs text-muted-foreground", className)}>
+      Coming Soon
+    </span>
+  );
 }
 
-export default ComingSoon
+export default ComingSoon;

@@ -33,10 +33,7 @@ describe("ContractView landing page", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Open ContractView" }),
-    ).toHaveAttribute(
-      "href",
-      "#workflow",
-    );
+    ).toHaveAttribute("href", "#workflow");
     expect(screen.getByRole("link", { name: "View Workflow" })).toHaveAttribute(
       "href",
       "#workflow",

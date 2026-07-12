@@ -11,19 +11,13 @@ async function ProtectedLayout({ children }: { children: React.ReactNode }) {
     redirect("/");
   }
 
-  return (
-    <div>
-      {children}
-    </div>
-  );
+  return <div>{children}</div>;
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <Suspense fallback={<SkeletonPageLoader />}>
-      <ProtectedLayout>
-        {children}
-      </ProtectedLayout>
+      <ProtectedLayout>{children}</ProtectedLayout>
     </Suspense>
-  )
+  );
 }

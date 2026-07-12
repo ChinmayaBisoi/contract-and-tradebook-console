@@ -13,7 +13,11 @@
       "!!**/dist",
       "!!**/out",
       "!!**/build",
+      "!!**/coverage",
       "!!**/next-env.d.ts",
+      "!!**/lib/generated",
+      "!!**/.clerk",
+      "!!**/.superpowers",
       "!!**/components/ui",
       "!!**/public",
       "!!**/.vscode"

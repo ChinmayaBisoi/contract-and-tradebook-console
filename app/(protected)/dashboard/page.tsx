@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
-
-import { DashboardShell } from "@/components/dashboard-shell";
-import { ChartAreaInteractive } from "@/components/chart-area-interactive";
-import { DataTable } from "@/components/data-table";
-import { SectionCards } from "@/components/section-cards";
-
 import data from "@/app/dashboard-new/data.json";
+import { DashboardShell } from "@/components/dashboard-shell";
+import { DataTable } from "@/components/data-table-v2";
 
 export const metadata: Metadata = {
   title: "Dashboard",

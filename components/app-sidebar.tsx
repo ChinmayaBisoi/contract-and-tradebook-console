@@ -1,11 +1,11 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import * as React from "react"
-import { useClerk } from "@clerk/nextjs"
-
-import { NavMain } from "@/components/nav-main"
-import { NavUser } from "@/components/nav-user"
+import { useClerk } from "@clerk/nextjs";
+import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
+import Link from "next/link";
+import type * as React from "react";
+import { NavMain } from "@/components/nav-main";
+import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -14,15 +14,10 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import {
-  LayoutDashboardIcon,
-  UsersIcon,
-  Settings2Icon,
-} from "lucide-react"
+} from "@/components/ui/sidebar";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { openUserProfile } = useClerk()
+  const { openUserProfile } = useClerk();
 
   const navMain = [
     {
@@ -40,7 +35,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       icon: <Settings2Icon />,
       onClick: () => openUserProfile(),
     },
-  ]
+  ];
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -66,5 +61,5 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavUser />
       </SidebarFooter>
     </Sidebar>
-  )
+  );
 }
