@@ -10,8 +10,13 @@ const ownerActions: OrganisationAction[] = [
   "organisation:update",
   "organisation:delete",
   "organisation:user:invite",
+  "organisation:user:read",
+  "organisation:user:update",
   "organisation:user:remove",
   "organisation:user:status:update",
+  "organisation:invitation:read",
+  "organisation:invitation:update",
+  "organisation:invitation:cancel",
 ];
 
 describe("checkOrgPermission", () => {
@@ -65,24 +70,24 @@ describe("checkOrgPermission", () => {
     ).rejects.toBeInstanceOf(TRPCError);
   });
 
-  it("allows managers to manage members but not organisation records", async () => {
+  it("allows admins to manage members but not organisation records", async () => {
     const findMembership = vi.fn(async () => ({
-      role: "MANAGER" as const,
+      role: "ADMIN" as const,
       status: "ACTIVE" as const,
     }));
 
     await expect(
       checkOrgPermission({
-        clerkUserId: "user_manager",
+        clerkUserId: "user_admin",
         organisationId: "org_1",
         action: "organisation:user:invite",
         findMembership,
       }),
-    ).resolves.toEqual({ role: "MANAGER", status: "ACTIVE" });
+    ).resolves.toEqual({ role: "ADMIN", status: "ACTIVE" });
 
     await expect(
       checkOrgPermission({
-        clerkUserId: "user_manager",
+        clerkUserId: "user_admin",
         organisationId: "org_1",
         action: "organisation:update",
         findMembership,
