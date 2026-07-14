@@ -13,7 +13,7 @@ describe("organisation permission matrix", () => {
     }
   });
 
-  it("lets admins manage member invitations without destructive access", () => {
+  it("lets admins manage member invitations and statuses without role access", () => {
     expect(
       hasOrgPermission({ role: "ADMIN", action: "organisation:read" }),
     ).toBe(true);
@@ -27,6 +27,12 @@ describe("organisation permission matrix", () => {
       hasOrgPermission({
         role: "ADMIN",
         action: "organisation:user:update",
+      }),
+    ).toBe(false);
+    expect(
+      hasOrgPermission({
+        role: "ADMIN",
+        action: "organisation:user:status:update",
       }),
     ).toBe(true);
     expect(
@@ -61,9 +67,9 @@ describe("organisation permission matrix", () => {
     ).toBe(false);
   });
 
-  it("limits members to read access", () => {
+  it("lets members read organisation analytics and the team directory", () => {
     expect(getPermissionsForOrgRole("MEMBER")).toEqual(
-      new Set(["organisation:read"]),
+      new Set(["organisation:read", "organisation:user:read"]),
     );
   });
 });

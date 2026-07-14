@@ -14,6 +14,7 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 const statusSchema = z.enum(["ACTIVE", "DISABLED"]);
+const memberStatusSchema = z.enum(["ACTIVE", "DISABLED", "REMOVED"]);
 const organisationListInput = z.object({
   filters: z
     .object({
@@ -55,9 +56,35 @@ type OrganisationRouterDb = {
       status: OrganisationUserStatus;
     } | null>;
     create: (args: unknown) => Promise<unknown>;
+    findMany: (args: unknown) => Promise<OrganisationMember[]>;
     update: (args: unknown) => Promise<unknown>;
     count: (args: unknown) => Promise<number>;
   };
+  invitation: {
+    count: (args: unknown) => Promise<number>;
+  };
+};
+
+type OrganisationMember = {
+  id: string;
+  clerkUserId: string;
+  clerkUserName: string;
+  clerkUserEmail: string;
+  role: OrganisationUserRole;
+  status: OrganisationUserStatus;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const organisationMemberSelect = {
+  id: true,
+  clerkUserId: true,
+  clerkUserName: true,
+  clerkUserEmail: true,
+  role: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
 };
 
 const organisationSelect = {
@@ -217,6 +244,150 @@ async function ensureNotLastActiveOwner({
 }
 
 export const organisationRouter = createTRPCRouter({
+  getAnalytics: protectedProcedure
+    .input(z.object({ organisationId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const db = getOrganisationDb(ctx);
+
+      await checkPermission({
+        ctx,
+        organisationId: input.organisationId,
+        action: "organisation:read",
+      });
+
+      const [
+        organisation,
+        activeMemberCount,
+        disabledMemberCount,
+        pendingInvitationCount,
+      ] = await Promise.all([
+        db.organisation.findUnique({
+          where: { id: input.organisationId },
+          select: { createdAt: true },
+        }),
+        db.organisationUser.count({
+          where: {
+            organisationId: input.organisationId,
+            status: "ACTIVE",
+          },
+        }),
+        db.organisationUser.count({
+          where: {
+            organisationId: input.organisationId,
+            status: "DISABLED",
+          },
+        }),
+        db.invitation.count({
+          where: {
+            organisationId: input.organisationId,
+            status: "PENDING",
+            expiresAt: { gt: new Date() },
+          },
+        }),
+      ]);
+
+      if (!organisation) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Organisation was not found.",
+        });
+      }
+
+      return {
+        activeMemberCount,
+        disabledMemberCount,
+        pendingInvitationCount,
+        createdAt: organisation.createdAt,
+        ageInDays: Math.max(
+          0,
+          Math.floor(
+            (Date.now() - organisation.createdAt.getTime()) /
+              (24 * 60 * 60 * 1000),
+          ),
+        ),
+      };
+    }),
+
+  listMembers: protectedProcedure
+    .input(
+      z.object({
+        organisationId: z.string().min(1),
+        filters: z
+          .object({
+            search: z.string().trim().max(100).optional(),
+            role: roleSchema.optional(),
+            status: memberStatusSchema.optional(),
+          })
+          .default({}),
+        page: z.number().int().min(1).default(1),
+        pageSize: z
+          .union([z.literal(10), z.literal(20), z.literal(50)])
+          .default(10),
+        sort: z
+          .enum(["clerkUserName", "role", "status", "createdAt"])
+          .default("createdAt"),
+        sortDirection: z.enum(["asc", "desc"]).default("desc"),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const db = getOrganisationDb(ctx);
+      const requester = await checkPermission({
+        ctx,
+        organisationId: input.organisationId,
+        action: "organisation:user:read",
+      });
+      const where = {
+        organisationId: input.organisationId,
+        ...(input.filters.role ? { role: input.filters.role } : {}),
+        ...(input.filters.status ? { status: input.filters.status } : {}),
+        ...(input.filters.search
+          ? {
+              OR: [
+                {
+                  clerkUserName: {
+                    contains: input.filters.search,
+                    mode: "insensitive" as const,
+                  },
+                },
+                {
+                  clerkUserEmail: {
+                    contains: input.filters.search,
+                    mode: "insensitive" as const,
+                  },
+                },
+              ],
+            }
+          : {}),
+      };
+      const [members, total] = await Promise.all([
+        db.organisationUser.findMany({
+          where,
+          skip: (input.page - 1) * input.pageSize,
+          take: input.pageSize,
+          orderBy: { [input.sort]: input.sortDirection },
+          select: organisationMemberSelect,
+        }),
+        db.organisationUser.count({ where }),
+      ]);
+
+      return {
+        data: members.map((member) => ({
+          ...member,
+          canChangeRole: requester.role === "OWNER",
+          canChangeStatus:
+            requester.role === "OWNER" ||
+            (requester.role === "ADMIN" && member.role === "MEMBER"),
+          canRemove: requester.role === "OWNER",
+        })),
+        pagination: {
+          page: input.page,
+          pageSize: input.pageSize,
+          total,
+          pageCount: Math.ceil(total / input.pageSize),
+        },
+      };
+    }),
+
   list: protectedProcedure
     .input(organisationListInput)
     .query(async ({ ctx, input }) => {
@@ -464,6 +635,42 @@ export const organisationRouter = createTRPCRouter({
           status: "REMOVED",
           statusChangedAt: new Date(),
         },
+      });
+    }),
+
+  updateMemberRole: protectedProcedure
+    .input(
+      z.object({
+        organisationId: z.string().min(1),
+        clerkUserId: z.string().min(1),
+        role: roleSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = getOrganisationDb(ctx);
+
+      await checkPermission({
+        ctx,
+        organisationId: input.organisationId,
+        action: "organisation:user:update",
+      });
+
+      if (input.role !== "OWNER") {
+        await ensureNotLastActiveOwner({
+          ctx,
+          organisationId: input.organisationId,
+          targetClerkUserId: input.clerkUserId,
+        });
+      }
+
+      return db.organisationUser.update({
+        where: {
+          clerkUserId_organisationId: {
+            clerkUserId: input.clerkUserId,
+            organisationId: input.organisationId,
+          },
+        },
+        data: { role: input.role },
       });
     }),
 
