@@ -202,6 +202,149 @@ describe("organisation details router", () => {
     });
   });
 
+  it("hides owner actions for the last active owner and removed members", async () => {
+    const now = new Date("2026-07-10T00:00:00.000Z");
+    const count = vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "owner_membership",
+            clerkUserId: "owner_1",
+            clerkUserName: "Owner User",
+            clerkUserEmail: "owner@example.com",
+            role: "OWNER",
+            status: "ACTIVE",
+            createdAt: now,
+            updatedAt: now,
+          },
+          {
+            id: "removed_membership",
+            clerkUserId: "removed_1",
+            clerkUserName: "Removed User",
+            clerkUserEmail: "removed@example.com",
+            role: "MEMBER",
+            status: "REMOVED",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]),
+        count,
+      },
+    });
+
+    const result = await caller.organisation.listMembers({
+      organisationId: "org_1",
+      page: 1,
+      pageSize: 10,
+      sort: "createdAt",
+      sortDirection: "desc",
+    });
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        organisationId: "org_1",
+        role: "OWNER",
+        status: "ACTIVE",
+      },
+    });
+    expect(result.data[0]).toMatchObject({
+      role: "OWNER",
+      status: "ACTIVE",
+      canChangeRole: false,
+      canChangeStatus: false,
+      canRemove: false,
+    });
+    expect(result.data[1]).toMatchObject({
+      status: "REMOVED",
+      canChangeRole: false,
+      canChangeStatus: false,
+      canRemove: false,
+    });
+  });
+
+  it("uses active owners outside the current page when deriving owner actions", async () => {
+    const now = new Date("2026-07-10T00:00:00.000Z");
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "owner_membership",
+            clerkUserId: "owner_1",
+            clerkUserName: "Owner User",
+            clerkUserEmail: "owner@example.com",
+            role: "OWNER",
+            status: "ACTIVE",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]),
+        count: vi.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(2),
+      },
+    });
+
+    const result = await caller.organisation.listMembers({
+      organisationId: "org_1",
+      page: 1,
+      pageSize: 10,
+      sort: "createdAt",
+      sortDirection: "desc",
+    });
+
+    expect(result.data[0]).toMatchObject({
+      role: "OWNER",
+      canChangeRole: true,
+      canChangeStatus: true,
+      canRemove: true,
+    });
+  });
+
+  it("keeps member viewers read-only for ordinary member rows", async () => {
+    const now = new Date("2026-07-10T00:00:00.000Z");
+    const caller = createCaller(
+      {
+        organisationUser: {
+          findUnique: vi.fn().mockResolvedValue(activeMembership("MEMBER")),
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "member_membership",
+              clerkUserId: "member_1",
+              clerkUserName: "Member User",
+              clerkUserEmail: "member@example.com",
+              role: "MEMBER",
+              status: "ACTIVE",
+              createdAt: now,
+              updatedAt: now,
+            },
+          ]),
+          count: vi.fn().mockResolvedValue(1),
+        },
+      },
+      {
+        clerkUserId: "member_2",
+        email: "member2@example.com",
+        name: "Second Member",
+      },
+    );
+
+    const result = await caller.organisation.listMembers({
+      organisationId: "org_1",
+      page: 1,
+      pageSize: 10,
+      sort: "createdAt",
+      sortDirection: "desc",
+    });
+
+    expect(result.data[0]).toMatchObject({
+      role: "MEMBER",
+      canChangeRole: false,
+      canChangeStatus: false,
+      canRemove: false,
+    });
+  });
+
   it("lets owners change member roles", async () => {
     const update = vi.fn().mockResolvedValue({
       clerkUserId: "member_1",

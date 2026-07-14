@@ -359,7 +359,7 @@ export const organisationRouter = createTRPCRouter({
             }
           : {}),
       };
-      const [members, total] = await Promise.all([
+      const [members, total, activeOwnerCount] = await Promise.all([
         db.organisationUser.findMany({
           where,
           skip: (input.page - 1) * input.pageSize,
@@ -368,17 +368,37 @@ export const organisationRouter = createTRPCRouter({
           select: organisationMemberSelect,
         }),
         db.organisationUser.count({ where }),
+        db.organisationUser.count({
+          where: {
+            organisationId: input.organisationId,
+            role: "OWNER",
+            status: "ACTIVE",
+          },
+        }),
       ]);
 
       return {
-        data: members.map((member) => ({
-          ...member,
-          canChangeRole: requester.role === "OWNER",
-          canChangeStatus:
-            requester.role === "OWNER" ||
-            (requester.role === "ADMIN" && member.role === "MEMBER"),
-          canRemove: requester.role === "OWNER",
-        })),
+        data: members.map((member) => {
+          const canMutateTarget =
+            member.status !== "REMOVED" &&
+            !(
+              member.role === "OWNER" &&
+              member.status === "ACTIVE" &&
+              activeOwnerCount <= 1
+            );
+          const ownerCanManage = requester.role === "OWNER" && canMutateTarget;
+
+          return {
+            ...member,
+            canChangeRole: ownerCanManage,
+            canChangeStatus:
+              ownerCanManage ||
+              (requester.role === "ADMIN" &&
+                member.role === "MEMBER" &&
+                canMutateTarget),
+            canRemove: ownerCanManage,
+          };
+        }),
         pagination: {
           page: input.page,
           pageSize: input.pageSize,
