@@ -16,6 +16,8 @@ function activeMembership(role: "OWNER" | "ADMIN" | "MEMBER" = "OWNER") {
   return { role, status: "ACTIVE" } as const;
 }
 
+const removedMembership = { role: "MEMBER", status: "REMOVED" } as const;
+
 describe("organisation details router", () => {
   it("returns organisation analytics to active members using scoped counts", async () => {
     vi.useFakeTimers();
@@ -350,15 +352,22 @@ describe("organisation details router", () => {
       clerkUserId: "member_1",
       role: "ADMIN",
     });
+    const tx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership("MEMBER")),
+        count: vi.fn(),
+        update,
+      },
+    };
+    const transaction = vi.fn(
+      async (operation: (client: typeof tx) => Promise<unknown>) =>
+        operation(tx),
+    );
     const caller = createCaller({
       organisationUser: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValueOnce(activeMembership())
-          .mockResolvedValueOnce(activeMembership("MEMBER")),
-        update,
-        count: vi.fn(),
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
       },
+      $transaction: transaction,
     });
 
     await expect(
@@ -377,20 +386,28 @@ describe("organisation details router", () => {
       },
       data: { role: "ADMIN" },
     });
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
   });
 
   it("prevents demoting the last active owner", async () => {
-    const findUnique = vi
-      .fn()
-      .mockResolvedValueOnce(activeMembership())
-      .mockResolvedValueOnce(activeMembership());
     const update = vi.fn();
-    const caller = createCaller({
+    const tx = {
       organisationUser: {
-        findUnique,
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
         count: vi.fn().mockResolvedValue(1),
         update,
       },
+    };
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+      },
+      $transaction: vi.fn(
+        async (operation: (client: typeof tx) => Promise<unknown>) =>
+          operation(tx),
+      ),
     });
 
     await expect(
@@ -404,6 +421,127 @@ describe("organisation details router", () => {
       message: "An organisation must keep at least one active owner.",
     });
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each<
+    [string, (caller: ReturnType<typeof createCaller>) => Promise<unknown>]
+  >([
+    [
+      "role changes",
+      (caller) =>
+        caller.organisation.updateMemberRole({
+          organisationId: "org_1",
+          clerkUserId: "removed_1",
+          role: "ADMIN",
+        }),
+    ],
+    [
+      "status changes",
+      (caller) =>
+        caller.organisation.updateMemberStatus({
+          organisationId: "org_1",
+          clerkUserId: "removed_1",
+          status: "ACTIVE",
+        }),
+    ],
+    [
+      "removal",
+      (caller) =>
+        caller.organisation.removeMember({
+          organisationId: "org_1",
+          clerkUserId: "removed_1",
+        }),
+    ],
+  ])("rejects %s for removed memberships", async (_label, mutate) => {
+    const update = vi.fn();
+    const tx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(removedMembership),
+        count: vi.fn(),
+        update,
+      },
+    };
+    const transaction = vi.fn(
+      async (operation: (client: typeof tx) => Promise<unknown>) =>
+        operation(tx),
+    );
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+      },
+      $transaction: transaction,
+    });
+
+    await expect(mutate(caller)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "Removed organisation members must be invited again before rejoining.",
+    });
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("retries the complete owner mutation after a serialization conflict", async () => {
+    const firstUpdate = vi.fn().mockResolvedValue({ role: "MEMBER" });
+    const firstTx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+        count: vi.fn().mockResolvedValue(2),
+        update: firstUpdate,
+      },
+    };
+    const secondUpdate = vi.fn();
+    const secondTx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+        count: vi.fn().mockResolvedValue(1),
+        update: secondUpdate,
+      },
+    };
+    const transaction = vi
+      .fn()
+      .mockImplementationOnce(
+        async (operation: (client: typeof firstTx) => Promise<unknown>) => {
+          await operation(firstTx);
+          throw { code: "P2034" };
+        },
+      )
+      .mockImplementationOnce(
+        async (operation: (client: typeof secondTx) => Promise<unknown>) =>
+          operation(secondTx),
+      );
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+      },
+      $transaction: transaction,
+    });
+
+    await expect(
+      caller.organisation.updateMemberRole({
+        organisationId: "org_1",
+        clerkUserId: "owner_1",
+        role: "MEMBER",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "An organisation must keep at least one active owner.",
+    });
+    expect(transaction).toHaveBeenCalledTimes(2);
+    expect(transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
+      isolationLevel: "Serializable",
+    });
+    expect(firstTx.organisationUser.findUnique).toHaveBeenCalledOnce();
+    expect(firstTx.organisationUser.count).toHaveBeenCalledOnce();
+    expect(firstUpdate).toHaveBeenCalledOnce();
+    expect(secondTx.organisationUser.findUnique).toHaveBeenCalledOnce();
+    expect(secondTx.organisationUser.count).toHaveBeenCalledOnce();
+    expect(secondUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects administrator role changes independently of action flags", async () => {
