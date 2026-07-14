@@ -53,6 +53,7 @@ type InvitationRouterDb = {
     findFirst: (args: unknown) => Promise<{ id: string } | null>;
     create: (args: unknown) => Promise<InvitationRecord | { id: string }>;
     update: (args: unknown) => Promise<InvitationRecord>;
+    updateMany: (args: unknown) => Promise<{ count: number }>;
   };
   organisationUser: {
     findUnique: (args: unknown) => Promise<MembershipRecord | null>;
@@ -371,6 +372,15 @@ export const invitationRouter = createTRPCRouter({
       }
 
       const email = normalizeEmail(input.email);
+      await db.invitation.updateMany({
+        where: {
+          organisationId: input.organisationId,
+          email,
+          status: "PENDING",
+          expiresAt: { lte: new Date() },
+        },
+        data: { status: "EXPIRED" },
+      });
       const existingMembership = await db.organisationUser.findFirst({
         where: {
           organisationId: input.organisationId,
