@@ -13,36 +13,51 @@ describe("organisation permission matrix", () => {
     }
   });
 
-  it("lets managers manage membership but not organisation records", () => {
+  it("lets admins manage member invitations without destructive access", () => {
     expect(
-      hasOrgPermission({ role: "MANAGER", action: "organisation:read" }),
+      hasOrgPermission({ role: "ADMIN", action: "organisation:read" }),
     ).toBe(true);
     expect(
       hasOrgPermission({
-        role: "MANAGER",
+        role: "ADMIN",
         action: "organisation:user:invite",
       }),
     ).toBe(true);
     expect(
       hasOrgPermission({
-        role: "MANAGER",
-        action: "organisation:user:remove",
+        role: "ADMIN",
+        action: "organisation:user:update",
       }),
     ).toBe(true);
     expect(
       hasOrgPermission({
-        role: "MANAGER",
-        action: "organisation:user:status:update",
+        role: "ADMIN",
+        action: "organisation:invitation:read",
       }),
     ).toBe(true);
     expect(
-      hasOrgPermission({ role: "MANAGER", action: "organisation:create" }),
+      hasOrgPermission({
+        role: "ADMIN",
+        action: "organisation:invitation:update",
+      }),
+    ).toBe(true);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "organisation:update" }),
     ).toBe(false);
     expect(
-      hasOrgPermission({ role: "MANAGER", action: "organisation:update" }),
+      hasOrgPermission({
+        role: "ADMIN",
+        action: "organisation:user:remove",
+      }),
     ).toBe(false);
     expect(
-      hasOrgPermission({ role: "MANAGER", action: "organisation:delete" }),
+      hasOrgPermission({
+        role: "ADMIN",
+        action: "organisation:invitation:cancel",
+      }),
+    ).toBe(false);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "organisation:delete" }),
     ).toBe(false);
   });
 
