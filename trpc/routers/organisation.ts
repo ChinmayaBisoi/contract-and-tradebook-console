@@ -411,44 +411,6 @@ export const organisationRouter = createTRPCRouter({
       return { id: input.id };
     }),
 
-  inviteMember: protectedProcedure
-    .input(
-      z.object({
-        organisationId: z.string().min(1),
-        clerkUserId: z.string().min(1),
-        clerkUserName: z.string().trim().default(""),
-        clerkUserEmail: z.email(),
-        role: roleSchema.default("MEMBER"),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const db = getOrganisationDb(ctx);
-      const requester = await checkPermission({
-        ctx,
-        organisationId: input.organisationId,
-        action: "organisation:user:invite",
-      });
-
-      if (requester.role === "ADMIN" && input.role !== "MEMBER") {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: "Administrators can only invite organisation members.",
-        });
-      }
-
-      return db.organisationUser.create({
-        data: {
-          clerkUserId: input.clerkUserId,
-          clerkUserName: input.clerkUserName,
-          clerkUserEmail: input.clerkUserEmail.toLowerCase(),
-          organisationId: input.organisationId,
-          role: input.role,
-          status: "ACTIVE",
-          statusChangedAt: new Date(),
-        },
-      });
-    }),
-
   removeMember: protectedProcedure
     .input(
       z.object({
