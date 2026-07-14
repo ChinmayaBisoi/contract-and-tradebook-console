@@ -96,6 +96,54 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function isPrismaError(error: unknown, code: string) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
+async function runInvitationWrite<T>(
+  operation: () => Promise<T>,
+  duplicateMessage?: string,
+) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (duplicateMessage && isPrismaError(error, "P2002")) {
+      throw new TRPCError({ code: "CONFLICT", message: duplicateMessage });
+    }
+
+    if (isPrismaError(error, "P2025")) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This invitation changed before the action completed.",
+      });
+    }
+
+    throw error;
+  }
+}
+
+function effectiveStatusFilter(status: InvitationStatus, now: Date) {
+  if (status === "PENDING") {
+    return { status: "PENDING" as const, expiresAt: { gt: now } };
+  }
+
+  if (status === "EXPIRED") {
+    return {
+      OR: [
+        { status: "EXPIRED" as const },
+        { status: "PENDING" as const, expiresAt: { lte: now } },
+      ],
+    };
+  }
+
+  return { status };
+}
+
 async function getInvitation(db: InvitationRouterDb, id: string) {
   const invitation = await db.invitation.findUnique({ where: { id } });
 
@@ -142,10 +190,12 @@ async function ensurePending(
   }
 
   if (invitation.expiresAt <= new Date()) {
-    await db.invitation.update({
-      where: { id: invitation.id, status: "PENDING" },
-      data: { status: "EXPIRED" },
-    });
+    await runInvitationWrite(() =>
+      db.invitation.update({
+        where: { id: invitation.id, status: "PENDING" },
+        data: { status: "EXPIRED" },
+      }),
+    );
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "This invitation has expired.",
@@ -206,6 +256,7 @@ export const invitationRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const db = getInvitationDb(ctx);
       const email = normalizeEmail(ctx.auth.email);
+      const now = new Date();
       const managedScope = {
         organisation: {
           users: {
@@ -248,7 +299,9 @@ export const invitationRouter = createTRPCRouter({
                 },
               ]
             : []),
-          ...(input.filters.status ? [{ status: input.filters.status }] : []),
+          ...(input.filters.status
+            ? [effectiveStatusFilter(input.filters.status, now)]
+            : []),
         ],
       };
       const [invitations, total] = await Promise.all([
@@ -350,18 +403,22 @@ export const invitationRouter = createTRPCRouter({
         });
       }
 
-      return db.invitation.create({
-        data: {
-          organisationId: input.organisationId,
-          email,
-          role: input.role,
-          inviterClerkUserId: ctx.auth.clerkUserId,
-          inviterName: ctx.auth.name ?? "",
-          inviterEmail: normalizeEmail(ctx.auth.email),
-          status: "PENDING",
-          expiresAt: input.expiresAt,
-        },
-      });
+      return runInvitationWrite(
+        () =>
+          db.invitation.create({
+            data: {
+              organisationId: input.organisationId,
+              email,
+              role: input.role,
+              inviterClerkUserId: ctx.auth.clerkUserId,
+              inviterName: ctx.auth.name ?? "",
+              inviterEmail: normalizeEmail(ctx.auth.email),
+              status: "PENDING",
+              expiresAt: input.expiresAt,
+            },
+          }),
+        "A pending invitation already exists for this email.",
+      );
     }),
 
   update: protectedProcedure
@@ -398,10 +455,12 @@ export const invitationRouter = createTRPCRouter({
         });
       }
 
-      return db.invitation.update({
-        where: { id: input.id, status: "PENDING" },
-        data: { role: input.role, expiresAt: input.expiresAt },
-      });
+      return runInvitationWrite(() =>
+        db.invitation.update({
+          where: { id: input.id, status: "PENDING" },
+          data: { role: input.role, expiresAt: input.expiresAt },
+        }),
+      );
     }),
 
   accept: protectedProcedure
@@ -412,37 +471,46 @@ export const invitationRouter = createTRPCRouter({
       ensureRecipient(invitation, ctx.auth.email);
       await ensurePending(db, invitation);
 
-      return db.$transaction(async (tx) => {
-        await tx.organisationUser.upsert({
-          where: {
-            clerkUserId_organisationId: {
-              clerkUserId: ctx.auth.clerkUserId,
-              organisationId: invitation.organisationId,
-            },
-          },
-          create: {
-            clerkUserId: ctx.auth.clerkUserId,
-            clerkUserName: ctx.auth.name ?? "",
-            clerkUserEmail: normalizeEmail(ctx.auth.email),
-            organisationId: invitation.organisationId,
-            role: invitation.role,
-            status: "ACTIVE",
-            statusChangedAt: new Date(),
-          },
-          update: {
-            clerkUserName: ctx.auth.name ?? "",
-            clerkUserEmail: normalizeEmail(ctx.auth.email),
-            role: invitation.role,
-            status: "ACTIVE",
-            statusChangedAt: new Date(),
-          },
+      if (invitation.role !== "ADMIN" && invitation.role !== "MEMBER") {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Invitation has an invalid organisation role.",
         });
+      }
 
-        return tx.invitation.update({
-          where: { id: invitation.id, status: "PENDING" },
-          data: { status: "ACCEPTED" },
-        });
-      });
+      return runInvitationWrite(() =>
+        db.$transaction(async (tx) => {
+          await tx.organisationUser.upsert({
+            where: {
+              clerkUserId_organisationId: {
+                clerkUserId: ctx.auth.clerkUserId,
+                organisationId: invitation.organisationId,
+              },
+            },
+            create: {
+              clerkUserId: ctx.auth.clerkUserId,
+              clerkUserName: ctx.auth.name ?? "",
+              clerkUserEmail: normalizeEmail(ctx.auth.email),
+              organisationId: invitation.organisationId,
+              role: invitation.role,
+              status: "ACTIVE",
+              statusChangedAt: new Date(),
+            },
+            update: {
+              clerkUserName: ctx.auth.name ?? "",
+              clerkUserEmail: normalizeEmail(ctx.auth.email),
+              role: invitation.role,
+              status: "ACTIVE",
+              statusChangedAt: new Date(),
+            },
+          });
+
+          return tx.invitation.update({
+            where: { id: invitation.id, status: "PENDING" },
+            data: { status: "ACCEPTED" },
+          });
+        }),
+      );
     }),
 
   decline: protectedProcedure
@@ -453,10 +521,12 @@ export const invitationRouter = createTRPCRouter({
       ensureRecipient(invitation, ctx.auth.email);
       await ensurePending(db, invitation);
 
-      return db.invitation.update({
-        where: { id: invitation.id, status: "PENDING" },
-        data: { status: "DECLINED" },
-      });
+      return runInvitationWrite(() =>
+        db.invitation.update({
+          where: { id: invitation.id, status: "PENDING" },
+          data: { status: "DECLINED" },
+        }),
+      );
     }),
 
   cancel: protectedProcedure
@@ -471,9 +541,11 @@ export const invitationRouter = createTRPCRouter({
         action: "organisation:invitation:cancel",
       });
 
-      return db.invitation.update({
-        where: { id: invitation.id, status: "PENDING" },
-        data: { status: "CANCELLED" },
-      });
+      return runInvitationWrite(() =>
+        db.invitation.update({
+          where: { id: invitation.id, status: "PENDING" },
+          data: { status: "CANCELLED" },
+        }),
+      );
     }),
 });

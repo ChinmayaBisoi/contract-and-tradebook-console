@@ -56,12 +56,17 @@ enum InvitationStatus {
   CANCELLED
 }
 
+enum InvitationRole {
+  ADMIN
+  MEMBER
+}
+
 model Invitation {
   id                 String               @id @default(cuid())
   email              String
   organisationId     String
   organisation       Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  role               OrganisationUserRole
+  role               InvitationRole
   inviterClerkUserId String
   inviterName        String
   inviterEmail       String

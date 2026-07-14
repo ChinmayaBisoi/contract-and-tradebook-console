@@ -112,6 +112,7 @@ describe("organisation Prisma schema", () => {
     const schema = readFileSync(schemaPath, "utf8");
     const organisation = readModelBlock(schema, "Organisation");
     const invitation = readModelBlock(schema, "Invitation");
+    const invitationRole = readEnumBlock(schema, "InvitationRole");
     const invitationStatus = readEnumBlock(schema, "InvitationStatus");
 
     expect(organisation).toMatch(/invitations\s+Invitation\[\]/);
@@ -121,7 +122,10 @@ describe("organisation Prisma schema", () => {
     expect(invitationStatus).toContain("EXPIRED");
     expect(invitationStatus).toContain("CANCELLED");
     expect(invitation).toMatch(/email\s+String/);
-    expect(invitation).toMatch(/role\s+OrganisationUserRole/);
+    expect(invitationRole).toContain("ADMIN");
+    expect(invitationRole).toContain("MEMBER");
+    expect(invitationRole).not.toContain("OWNER");
+    expect(invitation).toMatch(/role\s+InvitationRole/);
     expect(invitation).toMatch(/inviterClerkUserId\s+String/);
     expect(invitation).toMatch(/inviterName\s+String/);
     expect(invitation).toMatch(/inviterEmail\s+String/);
@@ -179,6 +183,9 @@ describe("organisation Prisma schema", () => {
     );
     expect(migration).toContain(
       "CREATE TYPE \"InvitationStatus\" AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED');",
+    );
+    expect(migration).toContain(
+      "CREATE TYPE \"InvitationRole\" AS ENUM ('ADMIN', 'MEMBER');",
     );
     expect(migration).toContain('CREATE TABLE "Invitation"');
     expect(migration).toContain(
