@@ -4,12 +4,15 @@ ALTER TYPE "OrganisationUserRole" RENAME VALUE 'MANAGER' TO 'ADMIN';
 -- CreateEnum
 CREATE TYPE "InvitationStatus" AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED');
 
+-- CreateEnum
+CREATE TYPE "InvitationRole" AS ENUM ('ADMIN', 'MEMBER');
+
 -- CreateTable
 CREATE TABLE "Invitation" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "organisationId" TEXT NOT NULL,
-    "role" "OrganisationUserRole" NOT NULL,
+    "role" "InvitationRole" NOT NULL,
     "inviterClerkUserId" TEXT NOT NULL,
     "inviterName" TEXT NOT NULL,
     "inviterEmail" TEXT NOT NULL,

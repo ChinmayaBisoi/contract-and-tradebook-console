@@ -86,6 +86,43 @@ describe("invitation router", () => {
     });
   });
 
+  it.each([
+    ["PENDING", { status: "PENDING", expiresAt: { gt: expect.any(Date) } }],
+    [
+      "EXPIRED",
+      {
+        OR: [
+          { status: "EXPIRED" },
+          { status: "PENDING", expiresAt: { lte: expect.any(Date) } },
+        ],
+      },
+    ],
+  ])("filters %s invitations by effective status", async (status, predicate) => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const caller = createCaller({ invitation: { findMany, count } });
+
+    await caller.invitation.list({
+      filters: {
+        direction: "received",
+        status: status as "PENDING" | "EXPIRED",
+      },
+      page: 1,
+      pageSize: 10,
+      sort: "createdAt",
+      sortDirection: "desc",
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { AND: [{ email: "owner@example.com" }, predicate] },
+      }),
+    );
+    expect(count).toHaveBeenCalledWith({
+      where: { AND: [{ email: "owner@example.com" }, predicate] },
+    });
+  });
+
   it("normalizes invitation emails and lets owners invite administrators", async () => {
     const create = vi.fn().mockResolvedValue({ id: "invite_1" });
     const caller = createCaller({
@@ -176,6 +213,34 @@ describe("invitation router", () => {
     });
   });
 
+  it("translates a concurrent duplicate invitation into a conflict", async () => {
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "OWNER",
+          status: "ACTIVE",
+        }),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      invitation: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockRejectedValue({ code: "P2002" }),
+      },
+    });
+
+    await expect(
+      caller.invitation.create({
+        organisationId: "org_1",
+        email: "member@example.com",
+        role: "MEMBER",
+        expiresAt: new Date("2099-07-21T12:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "A pending invitation already exists for this email.",
+    });
+  });
+
   it("edits a pending invitation when the requester has permission", async () => {
     const update = vi.fn().mockResolvedValue({
       id: "invite_1",
@@ -215,6 +280,39 @@ describe("invitation router", () => {
         role: "MEMBER",
         expiresAt: new Date("2099-07-28T12:00:00.000Z"),
       },
+    });
+  });
+
+  it("translates a stale invitation update into a conflict", async () => {
+    const caller = createCaller({
+      invitation: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "invite_1",
+          email: "member@example.com",
+          organisationId: "org_1",
+          role: "MEMBER",
+          status: "PENDING",
+          expiresAt: new Date("2099-07-21T12:00:00.000Z"),
+        }),
+        update: vi.fn().mockRejectedValue({ code: "P2025" }),
+      },
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "OWNER",
+          status: "ACTIVE",
+        }),
+      },
+    });
+
+    await expect(
+      caller.invitation.update({
+        id: "invite_1",
+        role: "MEMBER",
+        expiresAt: new Date("2099-07-28T12:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "This invitation changed before the action completed.",
     });
   });
 
@@ -294,6 +392,35 @@ describe("invitation router", () => {
       code: "FORBIDDEN",
       message: "This invitation belongs to a different email address.",
     });
+  });
+
+  it("rejects a persisted owner invitation before creating membership", async () => {
+    const transaction = vi.fn();
+    const caller = createCaller(
+      {
+        invitation: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "invite_1",
+            email: "member@example.com",
+            organisationId: "org_1",
+            role: "OWNER",
+            status: "PENDING",
+            expiresAt: new Date("2099-07-21T12:00:00.000Z"),
+          }),
+        },
+        $transaction: transaction,
+      },
+      {
+        clerkUserId: "member_1",
+        email: "member@example.com",
+        name: "Member User",
+      },
+    );
+
+    await expect(
+      caller.invitation.accept({ id: "invite_1" }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("persists expiry before rejecting an expired invitation", async () => {
