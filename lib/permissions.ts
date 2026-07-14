@@ -26,12 +26,11 @@ export const orgRolePermissions: Record<
     "organisation:read",
     "organisation:user:invite",
     "organisation:user:read",
-    "organisation:user:update",
     "organisation:user:status:update",
     "organisation:invitation:read",
     "organisation:invitation:update",
   ]),
-  MEMBER: new Set(["organisation:read"]),
+  MEMBER: new Set(["organisation:read", "organisation:user:read"]),
 };
 
 export function getPermissionsForOrgRole(role: OrganisationUserRole) {
