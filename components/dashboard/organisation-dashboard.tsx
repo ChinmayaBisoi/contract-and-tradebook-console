@@ -107,8 +107,8 @@ export function OrganisationDashboard() {
 
   async function invalidateDashboard() {
     await Promise.all([
-      queryClient.invalidateQueries(trpc.organisation.queryFilter()),
-      queryClient.invalidateQueries(trpc.invitation.queryFilter()),
+      queryClient.invalidateQueries(trpc.organisation.list.queryFilter()),
+      queryClient.invalidateQueries(trpc.invitation.list.queryFilter()),
     ]);
   }
 

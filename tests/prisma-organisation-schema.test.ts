@@ -175,7 +175,7 @@ describe("organisation Prisma schema", () => {
     const migration = readOrganisationMigrations();
 
     expect(migration).toContain(
-      'ALTER TYPE "OrganisationUserRole" RENAME VALUE \'MANAGER\' TO \'ADMIN\';',
+      "ALTER TYPE \"OrganisationUserRole\" RENAME VALUE 'MANAGER' TO 'ADMIN';",
     );
     expect(migration).toContain(
       "CREATE TYPE \"InvitationStatus\" AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED');",
@@ -184,8 +184,6 @@ describe("organisation Prisma schema", () => {
     expect(migration).toContain(
       'CREATE UNIQUE INDEX "Invitation_pending_organisation_email_key"',
     );
-    expect(migration).toContain(
-      'WHERE "status" = \'PENDING\'',
-    );
+    expect(migration).toContain("WHERE \"status\" = 'PENDING'");
   });
 });

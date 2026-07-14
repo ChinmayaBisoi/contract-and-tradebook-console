@@ -16,11 +16,13 @@ type InvitationStatus =
   | "EXPIRED"
   | "CANCELLED";
 
+type InvitationRole = "ADMIN" | "MEMBER";
+
 type InvitationRecord = {
   id: string;
   email: string;
   organisationId: string;
-  role: OrganisationUserRole;
+  role: InvitationRole;
   inviterClerkUserId?: string;
   inviterName?: string;
   inviterEmail?: string;
@@ -173,6 +175,8 @@ function formatInvitation(invitation: InvitationRecord, currentEmail: string) {
     invitation.status === "PENDING" && invitation.expiresAt <= new Date()
       ? "EXPIRED"
       : invitation.status;
+  const direction: "both" | "received" | "managed" =
+    isReceived && isManaged ? "both" : isReceived ? "received" : "managed";
 
   return {
     id: invitation.id,
@@ -186,8 +190,7 @@ function formatInvitation(invitation: InvitationRecord, currentEmail: string) {
     expiresAt: invitation.expiresAt,
     createdAt: invitation.createdAt,
     updatedAt: invitation.updatedAt,
-    direction:
-      isReceived && isManaged ? "both" : isReceived ? "received" : "managed",
+    direction,
     canAccept: isReceived && isPending,
     canDecline: isReceived && isPending,
     canEdit:
