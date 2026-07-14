@@ -134,6 +134,7 @@ describe("invitation router", () => {
         findFirst: vi.fn().mockResolvedValue(null),
       },
       invitation: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findFirst: vi.fn().mockResolvedValue(null),
         create,
       },
@@ -196,6 +197,7 @@ describe("invitation router", () => {
         findFirst: vi.fn().mockResolvedValue(null),
       },
       invitation: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findFirst: vi.fn().mockResolvedValue({ id: "invite_existing" }),
       },
     });
@@ -213,6 +215,46 @@ describe("invitation router", () => {
     });
   });
 
+  it("expires stale pending rows before creating a replacement invitation", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const create = vi.fn().mockResolvedValue({ id: "invite_replacement" });
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "OWNER",
+          status: "ACTIVE",
+        }),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      invitation: {
+        updateMany,
+        findFirst: vi.fn().mockResolvedValue(null),
+        create,
+      },
+    });
+
+    await expect(
+      caller.invitation.create({
+        organisationId: "org_1",
+        email: "member@example.com",
+        role: "MEMBER",
+        expiresAt: new Date("2099-07-21T12:00:00.000Z"),
+      }),
+    ).resolves.toEqual({ id: "invite_replacement" });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        organisationId: "org_1",
+        email: "member@example.com",
+        status: "PENDING",
+        expiresAt: { lte: expect.any(Date) },
+      },
+      data: { status: "EXPIRED" },
+    });
+    expect(updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      create.mock.invocationCallOrder[0],
+    );
+  });
+
   it("translates a concurrent duplicate invitation into a conflict", async () => {
     const caller = createCaller({
       organisationUser: {
@@ -223,6 +265,7 @@ describe("invitation router", () => {
         findFirst: vi.fn().mockResolvedValue(null),
       },
       invitation: {
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
         findFirst: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockRejectedValue({ code: "P2002" }),
       },
