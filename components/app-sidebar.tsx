@@ -38,7 +38,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   ];
 
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -46,7 +46,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:p-1.5!"
               render={<Link href="/dashboard" />}
             >
-              <span className="flex size-5! items-center justify-center border border-primary/25 bg-primary text-xs font-black text-primary-foreground">
+              <span className="flex size-8! w-8 items-center justify-center border border-primary/25 bg-primary text-xs font-black text-primary-foreground">
                 CV
               </span>
               <span className="text-base font-semibold">ContractView</span>
