@@ -78,13 +78,10 @@ function getOrganisationDb(ctx: { db: unknown }) {
   return ctx.db as OrganisationRouterDb;
 }
 
-function formatOrganisationWithMembership(
-  organisation: OrganisationWithMembership,
-  includeActiveMemberCount = false,
-) {
+function formatOrganisationBase(organisation: OrganisationWithMembership) {
   const membership = organisation.users[0];
 
-  const result = {
+  return {
     id: organisation.id,
     name: organisation.name,
     description: organisation.description,
@@ -93,6 +90,21 @@ function formatOrganisationWithMembership(
     createdAt: organisation.createdAt,
     updatedAt: organisation.updatedAt,
   };
+}
+
+function formatOrganisationWithMembership(
+  organisation: OrganisationWithMembership,
+  includeActiveMemberCount: true,
+): ReturnType<typeof formatOrganisationBase> & { activeMemberCount: number };
+function formatOrganisationWithMembership(
+  organisation: OrganisationWithMembership,
+  includeActiveMemberCount?: false,
+): ReturnType<typeof formatOrganisationBase>;
+function formatOrganisationWithMembership(
+  organisation: OrganisationWithMembership,
+  includeActiveMemberCount = false,
+) {
+  const result = formatOrganisationBase(organisation);
 
   return includeActiveMemberCount
     ? { ...result, activeMemberCount: organisation._count?.users ?? 0 }
@@ -281,7 +293,9 @@ export const organisationRouter = createTRPCRouter({
       orderBy: { createdAt: "desc" },
     });
 
-    return organisations.map(formatOrganisationWithMembership);
+    return organisations.map((organisation) =>
+      formatOrganisationWithMembership(organisation),
+    );
   }),
 
   get: protectedProcedure
