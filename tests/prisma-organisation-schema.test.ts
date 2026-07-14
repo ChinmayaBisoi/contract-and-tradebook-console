@@ -65,7 +65,8 @@ describe("organisation Prisma schema", () => {
     const organisationUser = readModelBlock(schema, "OrganisationUser");
 
     expect(roleEnum).toContain("OWNER");
-    expect(roleEnum).toContain("MANAGER");
+    expect(roleEnum).toContain("ADMIN");
+    expect(roleEnum).not.toContain("MANAGER");
     expect(roleEnum).toContain("MEMBER");
     expect(statusEnum).toContain("ACTIVE");
     expect(statusEnum).toContain("DISABLED");
@@ -107,6 +108,33 @@ describe("organisation Prisma schema", () => {
     expect(organisationUser).toContain("@@index([organisationId])");
   });
 
+  it("models database-managed organisation invitations", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    const organisation = readModelBlock(schema, "Organisation");
+    const invitation = readModelBlock(schema, "Invitation");
+    const invitationStatus = readEnumBlock(schema, "InvitationStatus");
+
+    expect(organisation).toMatch(/invitations\s+Invitation\[\]/);
+    expect(invitationStatus).toContain("PENDING");
+    expect(invitationStatus).toContain("ACCEPTED");
+    expect(invitationStatus).toContain("DECLINED");
+    expect(invitationStatus).toContain("EXPIRED");
+    expect(invitationStatus).toContain("CANCELLED");
+    expect(invitation).toMatch(/email\s+String/);
+    expect(invitation).toMatch(/role\s+OrganisationUserRole/);
+    expect(invitation).toMatch(/inviterClerkUserId\s+String/);
+    expect(invitation).toMatch(/inviterName\s+String/);
+    expect(invitation).toMatch(/inviterEmail\s+String/);
+    expect(invitation).toMatch(
+      /status\s+InvitationStatus\s+@default\(PENDING\)/,
+    );
+    expect(invitation).toMatch(/expiresAt\s+DateTime/);
+    expect(invitation).toContain("@@index([email, status, createdAt])");
+    expect(invitation).toContain(
+      "@@index([organisationId, status, createdAt])",
+    );
+  });
+
   it("includes a database migration for the organisation tables", () => {
     const migration = readOrganisationMigrations();
 
@@ -140,6 +168,24 @@ describe("organisation Prisma schema", () => {
     );
     expect(migration).toContain(
       'FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE ON UPDATE CASCADE',
+    );
+  });
+
+  it("migrates the admin role and pending invitation uniqueness", () => {
+    const migration = readOrganisationMigrations();
+
+    expect(migration).toContain(
+      'ALTER TYPE "OrganisationUserRole" RENAME VALUE \'MANAGER\' TO \'ADMIN\';',
+    );
+    expect(migration).toContain(
+      "CREATE TYPE \"InvitationStatus\" AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'CANCELLED');",
+    );
+    expect(migration).toContain('CREATE TABLE "Invitation"');
+    expect(migration).toContain(
+      'CREATE UNIQUE INDEX "Invitation_pending_organisation_email_key"',
+    );
+    expect(migration).toContain(
+      'WHERE "status" = \'PENDING\'',
     );
   });
 });

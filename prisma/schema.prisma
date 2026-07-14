@@ -12,6 +12,7 @@ model Organisation {
   name        String
   description String?
   users       OrganisationUser[]
+  invitations Invitation[]
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
@@ -20,7 +21,7 @@ model Organisation {
 
 enum OrganisationUserRole {
   OWNER
-  MANAGER
+  ADMIN
   MEMBER
 }
 
@@ -45,4 +46,30 @@ model OrganisationUser {
 
   @@unique([clerkUserId, organisationId])
   @@index([organisationId])
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+model Invitation {
+  id                 String               @id @default(cuid())
+  email              String
+  organisationId     String
+  organisation       Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  role               OrganisationUserRole
+  inviterClerkUserId String
+  inviterName        String
+  inviterEmail       String
+  status             InvitationStatus     @default(PENDING)
+  expiresAt          DateTime
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([email, status, createdAt])
+  @@index([organisationId, status, createdAt])
 }
