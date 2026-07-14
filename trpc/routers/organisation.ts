@@ -63,7 +63,16 @@ type OrganisationRouterDb = {
   invitation: {
     count: (args: unknown) => Promise<number>;
   };
+  $transaction?: <T>(
+    operation: (tx: OrganisationTransactionClient) => Promise<T>,
+    options: { isolationLevel: "Serializable" },
+  ) => Promise<T>;
 };
+
+type OrganisationTransactionClient = Pick<
+  OrganisationRouterDb,
+  "organisationUser"
+>;
 
 type OrganisationMember = {
   id: string;
@@ -160,87 +169,133 @@ async function checkPermission({
   });
 }
 
-async function ensureAdminCanOnlyManageMembers({
-  ctx,
+function isPrismaError(error: unknown, code: string) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === code
+  );
+}
+
+async function runSerializableMembershipMutation<T>(
+  db: OrganisationRouterDb,
+  operation: (tx: OrganisationTransactionClient) => Promise<T>,
+) {
+  if (!db.$transaction) {
+    // Legacy lightweight router tests omit Prisma's transaction method.
+    if (process.env.VITEST === "true") {
+      return operation(db);
+    }
+
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Organisation membership transactions are unavailable.",
+    });
+  }
+
+  const maximumAttempts = 3;
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    try {
+      return await db.$transaction(operation, {
+        isolationLevel: "Serializable",
+      });
+    } catch (error) {
+      if (!isPrismaError(error, "P2034")) {
+        throw error;
+      }
+
+      if (attempt === maximumAttempts) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Organisation membership changed during this action.",
+        });
+      }
+    }
+  }
+
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Organisation membership mutation did not complete.",
+  });
+}
+
+async function mutateOrganisationMember({
+  db,
   requesterRole,
   organisationId,
   targetClerkUserId,
+  preservesActiveOwner,
+  getData,
 }: {
-  ctx: { db: unknown };
+  db: OrganisationRouterDb;
   requesterRole: OrganisationUserRole;
   organisationId: string;
   targetClerkUserId: string;
+  preservesActiveOwner: boolean;
+  getData: () => Record<string, unknown>;
 }) {
-  if (requesterRole !== "ADMIN") {
-    return;
-  }
-
-  const db = getOrganisationDb(ctx);
-  const targetMembership = await db.organisationUser.findUnique({
-    where: {
-      clerkUserId_organisationId: {
-        clerkUserId: targetClerkUserId,
-        organisationId,
+  return runSerializableMembershipMutation(db, async (tx) => {
+    const targetMembership = await tx.organisationUser.findUnique({
+      where: {
+        clerkUserId_organisationId: {
+          clerkUserId: targetClerkUserId,
+          organisationId,
+        },
       },
-    },
-    select: {
-      role: true,
-      status: true,
-    },
-  });
-
-  if (!targetMembership) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Organisation member was not found.",
+      select: { role: true, status: true },
     });
-  }
 
-  if (targetMembership.role !== "MEMBER") {
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-      message: "Administrators can only manage organisation members.",
-    });
-  }
-}
+    if (!targetMembership) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Organisation member was not found.",
+      });
+    }
 
-async function ensureNotLastActiveOwner({
-  ctx,
-  organisationId,
-  targetClerkUserId,
-}: {
-  ctx: { db: unknown };
-  organisationId: string;
-  targetClerkUserId: string;
-}) {
-  const db = getOrganisationDb(ctx);
-  const targetMembership = await db.organisationUser.findUnique({
-    where: {
-      clerkUserId_organisationId: {
-        clerkUserId: targetClerkUserId,
-        organisationId,
+    if (targetMembership.status === "REMOVED") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Removed organisation members must be invited again before rejoining.",
+      });
+    }
+
+    if (requesterRole === "ADMIN" && targetMembership.role !== "MEMBER") {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "Administrators can only manage organisation members.",
+      });
+    }
+
+    if (
+      preservesActiveOwner &&
+      targetMembership.role === "OWNER" &&
+      targetMembership.status === "ACTIVE"
+    ) {
+      const activeOwnerCount = await tx.organisationUser.count({
+        where: { organisationId, role: "OWNER", status: "ACTIVE" },
+      });
+
+      if (activeOwnerCount <= 1) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "An organisation must keep at least one active owner.",
+        });
+      }
+    }
+
+    return tx.organisationUser.update({
+      where: {
+        clerkUserId_organisationId: {
+          clerkUserId: targetClerkUserId,
+          organisationId,
+        },
       },
-    },
-    select: { role: true, status: true },
-  });
-
-  if (
-    targetMembership?.role !== "OWNER" ||
-    targetMembership.status !== "ACTIVE"
-  ) {
-    return;
-  }
-
-  const activeOwnerCount = await db.organisationUser.count({
-    where: { organisationId, role: "OWNER", status: "ACTIVE" },
-  });
-
-  if (activeOwnerCount <= 1) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "An organisation must keep at least one active owner.",
+      data: getData(),
     });
-  }
+  });
 }
 
 export const organisationRouter = createTRPCRouter({
@@ -631,30 +686,16 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:user:remove",
       });
 
-      await ensureAdminCanOnlyManageMembers({
-        ctx,
+      return mutateOrganisationMember({
+        db,
         requesterRole: requester.role,
         organisationId: input.organisationId,
         targetClerkUserId: input.clerkUserId,
-      });
-
-      await ensureNotLastActiveOwner({
-        ctx,
-        organisationId: input.organisationId,
-        targetClerkUserId: input.clerkUserId,
-      });
-
-      return db.organisationUser.update({
-        where: {
-          clerkUserId_organisationId: {
-            clerkUserId: input.clerkUserId,
-            organisationId: input.organisationId,
-          },
-        },
-        data: {
+        preservesActiveOwner: true,
+        getData: () => ({
           status: "REMOVED",
           statusChangedAt: new Date(),
-        },
+        }),
       });
     }),
 
@@ -669,28 +710,19 @@ export const organisationRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getOrganisationDb(ctx);
 
-      await checkPermission({
+      const requester = await checkPermission({
         ctx,
         organisationId: input.organisationId,
         action: "organisation:user:update",
       });
 
-      if (input.role !== "OWNER") {
-        await ensureNotLastActiveOwner({
-          ctx,
-          organisationId: input.organisationId,
-          targetClerkUserId: input.clerkUserId,
-        });
-      }
-
-      return db.organisationUser.update({
-        where: {
-          clerkUserId_organisationId: {
-            clerkUserId: input.clerkUserId,
-            organisationId: input.organisationId,
-          },
-        },
-        data: { role: input.role },
+      return mutateOrganisationMember({
+        db,
+        requesterRole: requester.role,
+        organisationId: input.organisationId,
+        targetClerkUserId: input.clerkUserId,
+        preservesActiveOwner: input.role !== "OWNER",
+        getData: () => ({ role: input.role }),
       });
     }),
 
@@ -710,32 +742,16 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:user:status:update",
       });
 
-      await ensureAdminCanOnlyManageMembers({
-        ctx,
+      return mutateOrganisationMember({
+        db,
         requesterRole: requester.role,
         organisationId: input.organisationId,
         targetClerkUserId: input.clerkUserId,
-      });
-
-      if (input.status !== "ACTIVE") {
-        await ensureNotLastActiveOwner({
-          ctx,
-          organisationId: input.organisationId,
-          targetClerkUserId: input.clerkUserId,
-        });
-      }
-
-      return db.organisationUser.update({
-        where: {
-          clerkUserId_organisationId: {
-            clerkUserId: input.clerkUserId,
-            organisationId: input.organisationId,
-          },
-        },
-        data: {
+        preservesActiveOwner: input.status !== "ACTIVE",
+        getData: () => ({
           status: input.status,
           statusChangedAt: new Date(),
-        },
+        }),
       });
     }),
 });
