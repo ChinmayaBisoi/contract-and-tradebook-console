@@ -1,5 +1,7 @@
 import { UTApi } from "uploadthing/server";
 
+import { getWorkbookUploadAcl } from "@/lib/tradebook/uploadthing-config";
+
 type PrivateUrlSigner = {
   generateSignedURL: (
     key: string,
@@ -16,4 +18,18 @@ export async function getPrivateWorkbookUrl(
   });
 
   return result.ufsUrl;
+}
+
+export async function getWorkbookReadUrl(
+  input: { storageKey: string; blobUrl: string | null },
+  signer?: PrivateUrlSigner,
+) {
+  if (getWorkbookUploadAcl() === "public-read") {
+    if (!input.blobUrl) {
+      throw new Error("Workbook storage URL is missing.");
+    }
+    return input.blobUrl;
+  }
+
+  return getPrivateWorkbookUrl(input.storageKey, signer ?? new UTApi());
 }

@@ -16,7 +16,7 @@ import {
   parseWorkbookBuffer,
 } from "@/lib/tradebook/parser";
 import { persistReviewedDraft } from "@/lib/tradebook/persistence";
-import { getPrivateWorkbookUrl } from "@/lib/tradebook/uploadthing";
+import { getWorkbookReadUrl } from "@/lib/tradebook/uploadthing";
 import { buildImportDraft, type CellPatch } from "@/lib/tradebook/validation";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
@@ -90,6 +90,7 @@ type ImportRecord = {
     uploadedByClerkUserId: string;
     status: "PENDING" | "UPLOADED" | "PROCESSING" | "PROCESSED" | "FAILED";
     storageKey: string | null;
+    blobUrl: string | null;
     fileName: string | null;
     fileSizeBytes: number | null;
   };
@@ -296,7 +297,10 @@ export const tradebookImportRouter = createTRPCRouter({
       }
 
       try {
-        const url = await getPrivateWorkbookUrl(record.upload.storageKey);
+        const url = await getWorkbookReadUrl({
+          storageKey: record.upload.storageKey,
+          blobUrl: record.upload.blobUrl,
+        });
         const response = await fetch(url);
         if (!response.ok)
           throw new Error("Private workbook could not be read.");

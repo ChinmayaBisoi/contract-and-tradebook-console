@@ -2,10 +2,11 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { createTRPCClient, httpBatchLink, loggerLink } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { useState } from "react";
 
+import { REQUEST_ID_HEADER } from "@/lib/request-id";
 import { makeQueryClient } from "@/trpc/query-client";
 import type { AppRouter } from "@/trpc/routers/_app";
 
@@ -42,6 +43,10 @@ function getUrl() {
   return `${base}/api/trpc`;
 }
 
+function createRequestId() {
+  return crypto.randomUUID();
+}
+
 export function TRPCReactProvider({
   children,
 }: Readonly<{
@@ -51,8 +56,16 @@ export function TRPCReactProvider({
   const [trpcClient] = useState(() =>
     createTRPCClient<AppRouter>({
       links: [
+        loggerLink({
+          enabled: (opts) =>
+            process.env.NODE_ENV === "development" ||
+            (opts.direction === "down" && opts.result instanceof Error),
+        }),
         httpBatchLink({
           url: getUrl(),
+          headers: () => ({
+            [REQUEST_ID_HEADER]: createRequestId(),
+          }),
         }),
       ],
     }),

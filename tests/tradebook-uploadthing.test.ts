@@ -4,7 +4,8 @@ import {
   authorizeTradebookUpload,
   completeTradebookUpload,
 } from "@/lib/tradebook/upload-lifecycle";
-import { getPrivateWorkbookUrl } from "@/lib/tradebook/uploadthing";
+import { getPrivateWorkbookUrl, getWorkbookReadUrl } from "@/lib/tradebook/uploadthing";
+import { getWorkbookUploadAcl } from "@/lib/tradebook/uploadthing-config";
 
 describe("private tradebook upload lifecycle", () => {
   it("generates a short-lived URL instead of exposing a public object", async () => {
@@ -18,6 +19,33 @@ describe("private tradebook upload lifecycle", () => {
     expect(generateSignedURL).toHaveBeenCalledWith("private-key", {
       expiresIn: "5 minutes",
     });
+  });
+
+  it("reads public workbooks from the stored blob URL", async () => {
+    const previous = process.env.UPLOADTHING_WORKBOOK_ACL;
+    process.env.UPLOADTHING_WORKBOOK_ACL = "public-read";
+
+    try {
+      await expect(
+        getWorkbookReadUrl({
+          storageKey: "public-key",
+          blobUrl: "https://utfs.io/f/public-key",
+        }),
+      ).resolves.toBe("https://utfs.io/f/public-key");
+    } finally {
+      process.env.UPLOADTHING_WORKBOOK_ACL = previous;
+    }
+  });
+
+  it("defaults workbook uploads to private ACL", () => {
+    const previous = process.env.UPLOADTHING_WORKBOOK_ACL;
+    delete process.env.UPLOADTHING_WORKBOOK_ACL;
+
+    try {
+      expect(getWorkbookUploadAcl()).toBe("private");
+    } finally {
+      process.env.UPLOADTHING_WORKBOOK_ACL = previous;
+    }
   });
 
   it("authorizes only the pending record created by the current member", async () => {
