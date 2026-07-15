@@ -26,7 +26,7 @@ import {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { openUserProfile } = useClerk();
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const orgMatch = pathname.match(/^\/org\/([^/]+)/);
   const orgId = orgMatch?.[1];
   const orgBasePath = orgId ? `/org/${orgId}` : null;
@@ -50,38 +50,38 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   ];
   const orgNavItems = orgBasePath
     ? [
-      {
-        title: "Overview",
-        url: orgBasePath,
-        icon: <LayoutDashboardIcon />,
-        match: "exact" as const,
-      },
-      {
-        title: "Imports",
-        url: `${orgBasePath}/imports`,
-        icon: <UploadIcon />,
-        match: "prefix" as const,
-      },
-      {
-        title: "Contracts",
-        url: `${orgBasePath}/contracts`,
-        icon: <FileTextIcon />,
-        match: "prefix" as const,
-      },
+        {
+          title: "Overview",
+          url: orgBasePath,
+          icon: <LayoutDashboardIcon />,
+          match: "exact" as const,
+        },
+        {
+          title: "Imports",
+          url: `${orgBasePath}/imports`,
+          icon: <UploadIcon />,
+          match: "prefix" as const,
+        },
+        {
+          title: "Contracts",
+          url: `${orgBasePath}/contracts`,
+          icon: <FileTextIcon />,
+          match: "prefix" as const,
+        },
 
-      {
-        title: "Team",
-        url: `${orgBasePath}/teams`,
-        icon: <UsersIcon />,
-        match: "prefix" as const,
-      },
-      {
-        title: "Audit Trail",
-        url: `${orgBasePath}/audit-trail`,
-        icon: <ScrollTextIcon />,
-        match: "prefix" as const,
-      },
-    ]
+        {
+          title: "Team",
+          url: `${orgBasePath}/teams`,
+          icon: <UsersIcon />,
+          match: "prefix" as const,
+        },
+        {
+          title: "Audit Trail",
+          url: `${orgBasePath}/audit-trail`,
+          icon: <ScrollTextIcon />,
+          match: "prefix" as const,
+        },
+      ]
     : [];
 
   const baseNavItems = navMain;
