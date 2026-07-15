@@ -3,7 +3,6 @@ name: Deploy To AWS
 on:
   push:
     branches:
-      - staging
       - main
 
 permissions:
@@ -18,7 +17,7 @@ jobs:
   deploy:
     name: Build, migrate, and deploy
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    environment: production
 
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
@@ -112,3 +111,15 @@ jobs:
           CLOUDFRONT_URL: ${{ secrets.CLOUDFRONT_URL }}
           APP_ROOT_MARKER: ContractView
         run: ./scripts/aws/smoke-check.sh
+
+      - name: Log deployment URL
+        env:
+          CLOUDFRONT_URL: ${{ secrets.CLOUDFRONT_URL }}
+        run: |
+          echo "Deployment URL: ${CLOUDFRONT_URL}"
+          {
+            echo "## Deployment Complete"
+            echo
+            echo "- Deployment URL: ${CLOUDFRONT_URL}"
+            echo "- Image tag: ${IMAGE_TAG}"
+          } >> "${GITHUB_STEP_SUMMARY}"

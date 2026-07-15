@@ -451,8 +451,8 @@ export const contractRouter = createTRPCRouter({
               clientName: input.contract.clientName,
               poRefNo: input.contract.poRefNo,
               poDate: input.contract.poDate,
-              paymentTerms: input.contract.paymentTerms,
-              deliveryTerms: input.contract.deliveryTerms,
+              paymentTerms: input.contract.paymentTerms ?? null,
+              deliveryTerms: input.contract.deliveryTerms ?? null,
               fieldData: buildContractFieldData({
                 contract: input.contract,
                 items: existingItems,

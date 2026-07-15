@@ -7,7 +7,7 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-function isNeonDatabase(connectionString: string) {
+export function isNeonDatabase(connectionString: string) {
   return connectionString.includes("neon.tech");
 }
 

@@ -99,7 +99,12 @@ export function EditLineItemDialog({
             Update quantity and pricing details while this contract is in draft.
           </DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={handleSubmit}>
+        {open ? (
+          <form
+            key={lineItem.id}
+            className="grid gap-4"
+            onSubmit={handleSubmit}
+          >
           <Field>
             <FieldLabel htmlFor={`edit-line-item-description-${lineItem.id}`}>
               Description
@@ -166,7 +171,8 @@ export function EditLineItemDialog({
               {updateLineItem.isPending ? "Saving..." : "Save changes"}
             </Button>
           </DialogFooter>
-        </form>
+          </form>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

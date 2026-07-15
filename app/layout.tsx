@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
+import { auth } from "@clerk/nextjs/server";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
+import { after } from "next/server";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "@/components/ui/sonner";
+import { warmDatabaseIfNeeded } from "@/lib/db-warmer";
 import { cn } from "@/lib/utils";
 import { TRPCReactProvider } from "@/trpc/client";
 
@@ -27,11 +30,19 @@ export const metadata: Metadata = {
   description: "ContractView — contract and tradebook operations console.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { isAuthenticated } = await auth();
+
+  if (!isAuthenticated) {
+    after(() => {
+      void warmDatabaseIfNeeded();
+    });
+  }
+
   return (
     <html
       lang="en"

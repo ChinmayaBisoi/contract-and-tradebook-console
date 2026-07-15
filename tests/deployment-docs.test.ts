@@ -8,6 +8,8 @@ describe("AWS deployment runbook", () => {
     expect(doc).toContain("CloudFront");
     expect(doc).toContain("ECS");
     expect(doc).toContain("ECR");
+    expect(doc).toContain("main");
+    expect(doc).toContain("Deployment URL");
     expect(doc).not.toContain("Push to `staging` deploys to staging EC2");
   });
 });

@@ -20,9 +20,14 @@ describe("draft contract line-item UI affordances", () => {
 
   it("adds draft-only edit actions to both line-item ledger views", () => {
     const ledger = read("components/operations/line-items.tsx");
+    const contracts = read("components/operations/contracts.tsx");
 
     expect(ledger).toContain("EditLineItemDialog");
+    expect(ledger).toContain("EditContractDialog");
+    expect(ledger).toContain('data?.contract?.status === "DRAFT"');
     expect(ledger).toContain("deleteLineItem");
     expect(ledger).toContain('row.contract.status === "DRAFT"');
+    expect(contracts).toContain("EditContractDialog");
+    expect(contracts).toContain('row.status === "DRAFT"');
   });
 });
