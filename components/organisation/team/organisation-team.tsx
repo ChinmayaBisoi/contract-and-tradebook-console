@@ -119,6 +119,138 @@ function filterValue(filters: TeamFilter[], id: TeamFilter["id"]) {
   return filters.find((filter) => filter.id === id)?.value ?? "";
 }
 
+type RequesterRole = "OWNER" | "ADMIN" | "MEMBER";
+type InvitationInput = {
+  organisationId: string;
+  email: string;
+  role: "ADMIN" | "MEMBER";
+  expiresAt: Date;
+};
+
+function TeamHeading({
+  organisationId,
+  organisationName,
+  requesterRole,
+  total,
+  isInvitationPending,
+  mutationError,
+  onCreateInvitation,
+}: {
+  organisationId: string;
+  organisationName: string;
+  requesterRole: RequesterRole;
+  total: number;
+  isInvitationPending: boolean;
+  mutationError: string | null;
+  onCreateInvitation: (input: InvitationInput) => Promise<boolean>;
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h2
+            id="organisation-team-title"
+            className="text-lg font-semibold tracking-tight"
+          >
+            Team
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Find and review everyone with access to this organisation.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <p
+            className="text-sm tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {total} {total === 1 ? "member" : "members"}
+          </p>
+          {requesterRole !== "MEMBER" ? (
+            <CreateInvitationDialog
+              organisationId={organisationId}
+              organisationName={organisationName}
+              requesterRole={requesterRole}
+              isPending={isInvitationPending}
+              error={mutationError}
+              onCreate={onCreateInvitation}
+            />
+          ) : null}
+        </div>
+      </div>
+      {mutationError ? (
+        <Alert variant="destructive" role="alert">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertTitle>Team change failed</AlertTitle>
+          <AlertDescription>{mutationError}</AlertDescription>
+        </Alert>
+      ) : null}
+    </>
+  );
+}
+
+function TeamToolbar({
+  filters,
+  hasFilters,
+  onFilterChange,
+  onClearFilters,
+}: {
+  filters: TeamFilter[];
+  hasFilters: boolean;
+  onFilterChange: (id: TeamFilter["id"], value: string) => void;
+  onClearFilters: () => void;
+}) {
+  return (
+    <CardHeader className="flex flex-col gap-3 border-b md:flex-row md:items-center">
+      <label htmlFor="team-member-search" className="relative min-w-0 flex-1">
+        <span className="sr-only">Search members</span>
+        <SearchIcon
+          aria-hidden="true"
+          className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          id="team-member-search"
+          type="search"
+          aria-label="Search members"
+          placeholder="Search name or email"
+          className="pl-8"
+          value={filterValue(filters, "search")}
+          onChange={(event) => onFilterChange("search", event.target.value)}
+        />
+      </label>
+      <NativeSelect
+        aria-label="Filter by role"
+        value={filterValue(filters, "role")}
+        onChange={(event) => onFilterChange("role", event.target.value)}
+      >
+        <NativeSelectOption value="">All roles</NativeSelectOption>
+        <NativeSelectOption value="OWNER">Owner</NativeSelectOption>
+        <NativeSelectOption value="ADMIN">Admin</NativeSelectOption>
+        <NativeSelectOption value="MEMBER">Member</NativeSelectOption>
+      </NativeSelect>
+      <NativeSelect
+        aria-label="Filter by status"
+        value={filterValue(filters, "status")}
+        onChange={(event) => onFilterChange("status", event.target.value)}
+      >
+        <NativeSelectOption value="">All statuses</NativeSelectOption>
+        <NativeSelectOption value="ACTIVE">Active</NativeSelectOption>
+        <NativeSelectOption value="DISABLED">Disabled</NativeSelectOption>
+        <NativeSelectOption value="REMOVED">Removed</NativeSelectOption>
+      </NativeSelect>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        disabled={!hasFilters}
+        onClick={onClearFilters}
+      >
+        <XIcon aria-hidden="true" />
+        Clear filters
+      </Button>
+    </CardHeader>
+  );
+}
+
 export function OrganisationTeam({
   organisationId,
 }: {
@@ -205,12 +337,7 @@ export function OrganisationTeam({
     }
   }
 
-  async function handleCreateInvitation(input: {
-    organisationId: string;
-    email: string;
-    role: "ADMIN" | "MEMBER";
-    expiresAt: Date;
-  }) {
+  async function handleCreateInvitation(input: InvitationInput) {
     setMutationError(null);
     try {
       await createInvitation.mutateAsync(input);
@@ -253,99 +380,23 @@ export function OrganisationTeam({
 
   return (
     <section aria-labelledby="organisation-team-title" className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="space-y-1">
-          <h2
-            id="organisation-team-title"
-            className="text-lg font-semibold tracking-tight"
-          >
-            Team
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Find and review everyone with access to this organisation.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <p
-            className="text-sm tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {data.pagination.total}{" "}
-            {data.pagination.total === 1 ? "member" : "members"}
-          </p>
-          {requesterRole !== "MEMBER" ? (
-            <CreateInvitationDialog
-              organisationId={organisationId}
-              organisationName={organisation.name}
-              requesterRole={requesterRole}
-              isPending={createInvitation.isPending}
-              error={mutationError}
-              onCreate={handleCreateInvitation}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      {mutationError ? (
-        <Alert variant="destructive" role="alert">
-          <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>Team change failed</AlertTitle>
-          <AlertDescription>{mutationError}</AlertDescription>
-        </Alert>
-      ) : null}
+      <TeamHeading
+        organisationId={organisationId}
+        organisationName={organisation.name}
+        requesterRole={requesterRole}
+        total={data.pagination.total}
+        isInvitationPending={createInvitation.isPending}
+        mutationError={mutationError}
+        onCreateInvitation={handleCreateInvitation}
+      />
 
       <Card aria-busy={isTransitioning}>
-        <CardHeader className="flex flex-col gap-3 border-b md:flex-row md:items-center">
-          <label
-            htmlFor="team-member-search"
-            className="relative min-w-0 flex-1"
-          >
-            <span className="sr-only">Search members</span>
-            <SearchIcon
-              aria-hidden="true"
-              className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              id="team-member-search"
-              type="search"
-              aria-label="Search members"
-              placeholder="Search name or email"
-              className="pl-8"
-              value={filterValue(queryState.filters, "search")}
-              onChange={(event) => updateFilter("search", event.target.value)}
-            />
-          </label>
-          <NativeSelect
-            aria-label="Filter by role"
-            value={filterValue(queryState.filters, "role")}
-            onChange={(event) => updateFilter("role", event.target.value)}
-          >
-            <NativeSelectOption value="">All roles</NativeSelectOption>
-            <NativeSelectOption value="OWNER">Owner</NativeSelectOption>
-            <NativeSelectOption value="ADMIN">Admin</NativeSelectOption>
-            <NativeSelectOption value="MEMBER">Member</NativeSelectOption>
-          </NativeSelect>
-          <NativeSelect
-            aria-label="Filter by status"
-            value={filterValue(queryState.filters, "status")}
-            onChange={(event) => updateFilter("status", event.target.value)}
-          >
-            <NativeSelectOption value="">All statuses</NativeSelectOption>
-            <NativeSelectOption value="ACTIVE">Active</NativeSelectOption>
-            <NativeSelectOption value="DISABLED">Disabled</NativeSelectOption>
-            <NativeSelectOption value="REMOVED">Removed</NativeSelectOption>
-          </NativeSelect>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!hasFilters}
-            onClick={clearFilters}
-          >
-            <XIcon aria-hidden="true" />
-            Clear filters
-          </Button>
-        </CardHeader>
+        <TeamToolbar
+          filters={queryState.filters}
+          hasFilters={hasFilters}
+          onFilterChange={updateFilter}
+          onClearFilters={clearFilters}
+        />
         <CardContent className="px-0">
           <OrganisationTeamTable
             members={data.data}
