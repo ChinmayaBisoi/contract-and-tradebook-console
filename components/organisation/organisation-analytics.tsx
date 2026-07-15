@@ -145,9 +145,19 @@ export function OrganisationAnalytics({
           </Button>
           <Button
             variant="outline"
-            render={<Link href={`/api/org/${organisationId}/export`} />}
+            render={
+              <Link href={`/api/org/${organisationId}/export?format=excel`} />
+            }
           >
-            Export org data
+            Export Excel
+          </Button>
+          <Button
+            variant="outline"
+            render={
+              <Link href={`/api/org/${organisationId}/export?format=json`} />
+            }
+          >
+            Export JSON
           </Button>
         </div>
       </div>

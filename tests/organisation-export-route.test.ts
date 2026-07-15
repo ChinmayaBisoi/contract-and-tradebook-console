@@ -8,12 +8,16 @@ const source = readFileSync(
 );
 
 describe("organisation export route", () => {
-  it("streams a JSON export for all organisation data", () => {
+  it("supports both excel and json organisation exports", () => {
     expect(source).toContain("export async function GET");
-    expect(source).toContain('attachment; filename="');
+    expect(source).toContain('searchParams.get("format")');
+    expect(source).toContain('application/json; charset=utf-8');
+    expect(source).toContain(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
     expect(source).toContain('"Content-Type": "application/json; charset=utf-8"');
-    expect(source).toContain("organisationUsers");
-    expect(source).toContain("tradebookImports");
-    expect(source).toContain("auditEvents");
+    expect(source).toContain('"Content-Type": XLSX_MIME');
+    expect(source).toContain("buildOrganisationWorkbook");
+    expect(source).toContain("buildOrganisationContractsJson");
   });
 });
