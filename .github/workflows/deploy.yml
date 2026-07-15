@@ -144,13 +144,13 @@ jobs:
 
       - name: Smoke check CloudFront
         env:
-          CLOUDFRONT_URL: ${{ secrets.CLOUDFRONT_URL }}
+          CLOUDFRONT_URL: ${{ vars.CLOUDFRONT_URL }}
           APP_ROOT_MARKER: ContractView
         run: ./scripts/aws/smoke-check.sh
 
       - name: Log deployment URL
         env:
-          CLOUDFRONT_URL: ${{ secrets.CLOUDFRONT_URL }}
+          CLOUDFRONT_URL: ${{ vars.CLOUDFRONT_URL }}
         run: |
           echo "Deployment URL: ${CLOUDFRONT_URL}"
           {

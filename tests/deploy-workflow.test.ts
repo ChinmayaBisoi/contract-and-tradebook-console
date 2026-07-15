@@ -13,7 +13,8 @@ describe("deploy workflow", () => {
     expect(workflow).toContain("amazon-ecr-login");
     expect(workflow).toContain("./scripts/aws/deploy-ecs.sh");
     expect(workflow).toContain("Deployment URL");
-    expect(workflow).toContain("${{ secrets." + "CLOUDFRONT_URL }}");
+    expect(workflow).toContain("${{ vars." + "CLOUDFRONT_URL }}");
+    expect(workflow).not.toContain("${{ secrets." + "CLOUDFRONT_URL }}");
     expect(workflow).toContain("OPENAI_API_KEY_SECRET_ARN");
     expect(workflow).toContain("OPENAI_MAPPING_MODEL");
     expect(workflow).toContain("UPLOADTHING_WORKBOOK_ACL");
