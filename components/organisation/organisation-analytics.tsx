@@ -1,6 +1,6 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
   CalendarDaysIcon,
   FileTextIcon,
@@ -10,6 +10,7 @@ import {
   UserXIcon,
 } from "lucide-react";
 
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -98,9 +99,23 @@ export function OrganisationAnalytics({
   organisationId: string;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const input = { organisationId };
   const { data: analytics } = useSuspenseQuery(
-    trpc.organisation.getAnalytics.queryOptions({ organisationId }),
+    trpc.organisation.getAnalytics.queryOptions(input),
   );
+  useOrganisationEvents({
+    organisationId,
+    onEvent: async (event) => {
+      if (event.entity !== "organisation" && event.entity !== "invitation") {
+        return;
+      }
+
+      await queryClient.invalidateQueries(
+        trpc.organisation.getAnalytics.queryFilter(input),
+      );
+    },
+  });
 
   return (
     <section

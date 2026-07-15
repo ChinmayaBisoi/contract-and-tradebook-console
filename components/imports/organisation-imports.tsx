@@ -11,7 +11,7 @@ import {
   importSearchParams,
 } from "@/components/imports/search-params";
 import { TradebookUpload } from "@/components/imports/tradebook-upload";
-import { useTradebookImportEvents } from "@/components/imports/use-tradebook-import-events";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   OperationsPagination,
   TableEmptyState,
@@ -68,8 +68,9 @@ export function OrganisationImports({
     ),
   );
 
-  useTradebookImportEvents({
+  useOrganisationEvents({
     organisationId,
+    entity: "upload",
     onEvent: async () => {
       await queryClient.invalidateQueries(
         trpc.tradebookImport.list.queryFilter({ organisationId }),
