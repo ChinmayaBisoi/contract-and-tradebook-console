@@ -160,6 +160,17 @@ describe("OrganisationAnalytics", () => {
     expect(screen.getAllByText("Not connected")).toHaveLength(2);
   });
 
+  it("shows import and export actions on the overview page", async () => {
+    await renderPage();
+
+    expect(
+      await screen.findByRole("link", { name: "Import workbook" }),
+    ).toHaveAttribute("href", "/org/org_1/imports");
+    expect(
+      screen.getByRole("link", { name: "Export org data" }),
+    ).toHaveAttribute("href", "/api/org/org_1/export");
+  });
+
   it("shows the analytics skeleton while the client query is pending", async () => {
     clientState.analyticsQuery.mockReturnValue(new Promise(() => undefined));
 

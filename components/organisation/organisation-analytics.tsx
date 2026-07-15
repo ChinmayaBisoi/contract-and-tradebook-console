@@ -9,9 +9,11 @@ import {
   UsersIcon,
   UserXIcon,
 } from "lucide-react";
+import Link from "next/link";
 
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -122,16 +124,32 @@ export function OrganisationAnalytics({
       aria-labelledby="organisation-analytics-title"
       className="space-y-4"
     >
-      <div className="space-y-1">
-        <h2
-          id="organisation-analytics-title"
-          className="text-lg font-semibold tracking-tight"
-        >
-          Overview
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Current membership and organisation activity at a glance.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <h2
+            id="organisation-analytics-title"
+            className="text-lg font-semibold tracking-tight"
+          >
+            Overview
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Current membership and organisation activity at a glance.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            render={<Link href={`/org/${organisationId}/imports`} />}
+          >
+            Import workbook
+          </Button>
+          <Button
+            variant="outline"
+            render={<Link href={`/api/org/${organisationId}/export`} />}
+          >
+            Export org data
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
