@@ -7,7 +7,6 @@ import {
 import Link from "next/link";
 import { Component } from "react";
 
-import { OrganisationNav } from "@/components/organisation/organisation-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useTRPC } from "@/trpc/client";
@@ -130,24 +129,24 @@ export function OrganisationWorkspace({
   );
 
   return (
-    <main className="flex flex-1 flex-col gap-6 px-4 py-6 lg:px-6">
-      <header className="flex flex-col gap-5 border-b pb-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
+    <div className="flex flex-1 flex-col">
+      <header className="border-b px-4 py-5 lg:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-medium uppercase tracking-[0.18em] text-primary">
+              Organisation
+            </p>
             <h1 className="truncate text-2xl font-semibold tracking-tight">
               {organisation.name}
             </h1>
-            <p className="max-w-3xl text-sm text-muted-foreground">
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
               {organisation.description || "No description provided."}
             </p>
           </div>
-          <Badge variant="outline" className="mt-1">
-            {formatRole(organisation.role)}
-          </Badge>
+          <Badge variant="outline">{formatRole(organisation.role)}</Badge>
         </div>
-        <OrganisationNav orgId={orgId} />
       </header>
-      {children}
-    </main>
+      <div className="px-4 pb-6 pt-4 lg:px-6">{children}</div>
+    </div>
   );
 }

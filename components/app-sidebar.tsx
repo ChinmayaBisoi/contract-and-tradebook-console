@@ -1,8 +1,15 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { LayoutDashboardIcon, Settings2Icon } from "lucide-react";
+import {
+  FileTextIcon,
+  LayoutDashboardIcon,
+  ScrollTextIcon,
+  Settings2Icon,
+  UsersIcon,
+} from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type * as React from "react";
 import { NavMain } from "@/components/nav-main";
 import { NavUser } from "@/components/nav-user";
@@ -18,6 +25,10 @@ import {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { openUserProfile } = useClerk();
+  const pathname = usePathname();
+  const orgMatch = pathname.match(/^\/org\/([^/]+)/);
+  const orgId = orgMatch?.[1];
+  const orgBasePath = orgId ? `/org/${orgId}` : null;
 
   const navMain = [
     {
@@ -36,6 +47,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       onClick: () => openUserProfile(),
     },
   ];
+  const orgNavItems = orgBasePath
+    ? [
+      {
+        title: "Overview",
+        url: orgBasePath,
+        icon: <LayoutDashboardIcon />,
+        match: "exact" as const,
+      },
+      {
+        title: "Audit Trail",
+        url: `${orgBasePath}/audit-trail`,
+        icon: <ScrollTextIcon />,
+        match: "prefix" as const,
+      },
+      {
+        title: "Team",
+        url: `${orgBasePath}/teams`,
+        icon: <UsersIcon />,
+        match: "prefix" as const,
+      },
+      {
+        title: "Contracts",
+        url: `${orgBasePath}/contracts`,
+        icon: <FileTextIcon />,
+        match: "prefix" as const,
+      },
+    ]
+    : [];
+
+  const baseNavItems = navMain;
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -55,7 +96,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
+        <NavMain items={baseNavItems} />
+        {orgNavItems.length > 0 ? (
+          <NavMain title="Organisation" items={orgNavItems} />
+        ) : null}
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
