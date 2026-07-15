@@ -1,3 +1,9 @@
+import {
+  publishRealtimeEvent,
+  subscribeToRealtimeEvents,
+  type RealtimeEvent,
+} from "@/lib/realtime/events";
+
 export type TradebookImportEventType =
   | "upload.updated"
   | "import.preparing"
@@ -14,23 +20,38 @@ export type TradebookImportEvent = {
   occurredAt: string;
 };
 
-type TradebookImportSubscriber = (event: TradebookImportEvent) => void;
+function asTradebookEvent(event: RealtimeEvent): TradebookImportEvent | null {
+  if (event.entity !== "upload" || !event.organisationId) {
+    return null;
+  }
 
-const subscribers = new Set<TradebookImportSubscriber>();
+  const importId = event.entityId;
+  const uploadId = event.uploadId ?? event.entityId;
+
+  return {
+    type: (event.name as TradebookImportEventType) ?? "upload.updated",
+    organisationId: event.organisationId,
+    importId,
+    uploadId,
+    status: event.status,
+    occurredAt: event.occurredAt,
+  };
+}
 
 export function publishTradebookEvent(
   event: Omit<TradebookImportEvent, "occurredAt">,
 ) {
-  const payload: TradebookImportEvent = {
-    ...event,
-    occurredAt: new Date().toISOString(),
-  };
+  const payload = publishRealtimeEvent({
+    name: event.type,
+    entity: "upload",
+    action: "updated",
+    organisationId: event.organisationId,
+    entityId: event.importId,
+    uploadId: event.uploadId ?? event.importId,
+    status: event.status,
+  });
 
-  for (const subscriber of subscribers) {
-    subscriber(payload);
-  }
-
-  return payload;
+  return asTradebookEvent(payload) as TradebookImportEvent;
 }
 
 export function subscribeToTradebookEvents(
@@ -38,16 +59,19 @@ export function subscribeToTradebookEvents(
     organisationId: string;
     importId?: string;
   },
-  listener: TradebookImportSubscriber,
+  listener: (event: TradebookImportEvent) => void,
 ) {
-  const subscriber: TradebookImportSubscriber = (event) => {
-    if (event.organisationId !== filter.organisationId) return;
-    if (filter.importId && event.importId !== filter.importId) return;
-    listener(event);
-  };
-
-  subscribers.add(subscriber);
-  return () => {
-    subscribers.delete(subscriber);
-  };
+  return subscribeToRealtimeEvents(
+    {
+      organisationId: filter.organisationId,
+      entity: "upload",
+      ...(filter.importId ? { entityId: filter.importId } : {}),
+    },
+    (event) => {
+      const payload = asTradebookEvent(event);
+      if (payload) {
+        listener(payload);
+      }
+    },
+  );
 }
