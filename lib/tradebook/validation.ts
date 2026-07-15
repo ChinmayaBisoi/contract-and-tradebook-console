@@ -22,7 +22,9 @@ export type ImportValidationError = {
   code:
     | "REQUIRED"
     | "INVALID_DATE"
+    | "INVALID_TYPE"
     | "NONNEGATIVE"
+    | "POSITIVE"
     | "INVALID_STATUS"
     | "DUPLICATE_PO"
     | "EXISTING_PO"
@@ -102,6 +104,14 @@ function value(row: SnapshotValue[], mapping: Mapping, field: string) {
 
 function text(value: SnapshotValue) {
   return String(value ?? "").trim();
+}
+
+function hasText(value: SnapshotValue) {
+  return text(value) !== "";
+}
+
+function isStringLike(value: SnapshotValue) {
+  return typeof value === "string";
 }
 
 function numeric(value: SnapshotValue) {
@@ -204,6 +214,8 @@ export function buildImportDraft({
       const clientName = text(
         value(row, summaryAnalysis.mapping, "clientName"),
       );
+      const rawPoRefNo = value(row, summaryAnalysis.mapping, "poRefNo");
+      const rawClientName = value(row, summaryAnalysis.mapping, "clientName");
       const rawDate = text(value(row, summaryAnalysis.mapping, "poDate"));
       const poDate = new Date(rawDate);
       const rawStatus =
@@ -236,6 +248,26 @@ export function buildImportDraft({
           field: "poRefNo",
           code: "EXISTING_PO",
           message: "PO reference already exists in this organisation.",
+        });
+      }
+      if (hasText(rawPoRefNo) && !isStringLike(rawPoRefNo)) {
+        errors.push({
+          sheet: summarySheet.name,
+          row: rowNumber,
+          column: column(summaryAnalysis.mapping, "poRefNo"),
+          field: "poRefNo",
+          code: "INVALID_TYPE",
+          message: "PO reference must be text.",
+        });
+      }
+      if (hasText(rawClientName) && !isStringLike(rawClientName)) {
+        errors.push({
+          sheet: summarySheet.name,
+          row: rowNumber,
+          column: column(summaryAnalysis.mapping, "clientName"),
+          field: "clientName",
+          code: "INVALID_TYPE",
+          message: "Client name must be text.",
         });
       }
       if (!clientName) {
@@ -301,10 +333,15 @@ export function buildImportDraft({
       const workbookItemId = text(
         value(row, lineAnalysis.mapping, "workbookItemId"),
       );
+      const rawWorkbookItemId = value(row, lineAnalysis.mapping, "workbookItemId");
       const poRefNo = text(value(row, lineAnalysis.mapping, "poRefNo"));
+      const rawLinePoRefNo = value(row, lineAnalysis.mapping, "poRefNo");
       const description = text(value(row, lineAnalysis.mapping, "description"));
+      const rawDescription = value(row, lineAnalysis.mapping, "description");
       const quantity = numeric(value(row, lineAnalysis.mapping, "quantity"));
       const unitPrice = numeric(value(row, lineAnalysis.mapping, "unitPrice"));
+      const rawQuantityUnit = value(row, lineAnalysis.mapping, "quantityUnit");
+      const rawPricingUnit = value(row, lineAnalysis.mapping, "pricingUnit");
       const totalColumn = column(lineAnalysis.mapping, "total");
       const recalculatedTotal = formulaValues.get(
         `${lineSheet.name}!${String.fromCharCode(64 + totalColumn)}${rowNumber}`,
@@ -332,6 +369,26 @@ export function buildImportDraft({
           message: "Workbook item ID is duplicated.",
         });
       }
+      if (hasText(rawWorkbookItemId) && !isStringLike(rawWorkbookItemId)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "workbookItemId"),
+          field: "workbookItemId",
+          code: "INVALID_TYPE",
+          message: "Workbook item ID must be text.",
+        });
+      }
+      if (hasText(rawLinePoRefNo) && !isStringLike(rawLinePoRefNo)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "poRefNo"),
+          field: "poRefNo",
+          code: "INVALID_TYPE",
+          message: "PO reference must be text.",
+        });
+      }
       if (!description) {
         errors.push({
           sheet: lineSheet.name,
@@ -342,20 +399,55 @@ export function buildImportDraft({
           message: "Description is required.",
         });
       }
-      for (const [field, amount] of [
-        ["quantity", quantity],
-        ["unitPrice", unitPrice],
-      ] as const) {
-        if (!Number.isFinite(amount) || amount < 0) {
-          errors.push({
-            sheet: lineSheet.name,
-            row: rowNumber,
-            column: column(lineAnalysis.mapping, field),
-            field,
-            code: "NONNEGATIVE",
-            message: `${field === "quantity" ? "Quantity" : "Unit price"} must be nonnegative.`,
-          });
-        }
+      if (hasText(rawDescription) && !isStringLike(rawDescription)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "description"),
+          field: "description",
+          code: "INVALID_TYPE",
+          message: "Description must be text.",
+        });
+      }
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "quantity"),
+          field: "quantity",
+          code: "POSITIVE",
+          message: "Quantity must be greater than zero.",
+        });
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "unitPrice"),
+          field: "unitPrice",
+          code: "NONNEGATIVE",
+          message: "Unit price must be nonnegative.",
+        });
+      }
+      if (hasText(rawQuantityUnit) && !isStringLike(rawQuantityUnit)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "quantityUnit"),
+          field: "quantityUnit",
+          code: "INVALID_TYPE",
+          message: "Quantity unit must be text when provided.",
+        });
+      }
+      if (hasText(rawPricingUnit) && !isStringLike(rawPricingUnit)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "pricingUnit"),
+          field: "pricingUnit",
+          code: "INVALID_TYPE",
+          message: "Pricing unit must be text when provided.",
+        });
       }
 
       return {
@@ -387,11 +479,23 @@ export function buildImportDraft({
     }
   }
 
+  const contractTotals = lineItems.reduce(
+    (totals, lineItem) =>
+      totals.set(
+        lineItem.poRefNo,
+        (totals.get(lineItem.poRefNo) ?? 0) + lineItem.total,
+      ),
+    new Map<string, number>(),
+  );
+
   const baselineSelectedLines = lineRows.filter(({ row }) =>
     originalSelectedPos.has(text(value(row, lineAnalysis.mapping, "poRefNo"))),
   ).length;
   return {
-    contracts,
+    contracts: contracts.map((contract) => ({
+      ...contract,
+      total: contractTotals.get(contract.poRefNo) ?? 0,
+    })),
     lineItems,
     errors,
     discardedCount:

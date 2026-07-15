@@ -109,7 +109,7 @@ describe("editable tradebook validation", () => {
         row: 2,
         column: 4,
         field: "quantity",
-        code: "NONNEGATIVE",
+        code: "POSITIVE",
       }),
     );
 
@@ -124,6 +124,88 @@ describe("editable tradebook validation", () => {
       discarded.lineItems.every((line) => line.poRefNo !== first.poRefNo),
     ).toBe(true);
     expect(discarded.discardedCount).toBeGreaterThan(1);
+  });
+
+  it("allows missing optional fields without blocking import", () => {
+    const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
+    const draft = buildImportDraft({
+      parsed,
+      mapping,
+      selectedSourceOrganisationId: "ORG-001",
+      patches: [
+        { sheet: "Summary", row: 2, column: 5, value: null },
+        { sheet: "Summary", row: 2, column: 6, value: "" },
+        { sheet: "Line Items", row: 2, column: 5, value: "" },
+        { sheet: "Line Items", row: 2, column: 7, value: null },
+      ],
+    });
+
+    expect(
+      draft.errors.filter((error) =>
+        [
+          "paymentTerms",
+          "deliveryTerms",
+          "quantityUnit",
+          "pricingUnit",
+        ].includes(error.field),
+      ),
+    ).toEqual([]);
+  });
+
+  it("rejects invalid required field types and zero quantities", () => {
+    const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
+    const draft = buildImportDraft({
+      parsed,
+      mapping,
+      selectedSourceOrganisationId: "ORG-001",
+      patches: [
+        { sheet: "Summary", row: 2, column: 2, value: 123 },
+        { sheet: "Line Items", row: 2, column: 3, value: 789 },
+        { sheet: "Line Items", row: 2, column: 4, value: 0 },
+      ],
+    });
+
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        row: 2,
+        field: "clientName",
+        code: "INVALID_TYPE",
+      }),
+    );
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        sheet: "Line Items",
+        row: 2,
+        field: "description",
+        code: "INVALID_TYPE",
+      }),
+    );
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        sheet: "Line Items",
+        row: 2,
+        field: "quantity",
+        code: "POSITIVE",
+      }),
+    );
+  });
+
+  it("rejects non-text contract references during import", () => {
+    const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
+    const draft = buildImportDraft({
+      parsed,
+      mapping,
+      selectedSourceOrganisationId: "ORG-001",
+      patches: [{ sheet: "Summary", row: 2, column: 3, value: 456 }],
+    });
+
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        row: 2,
+        field: "poRefNo",
+        code: "INVALID_TYPE",
+      }),
+    );
   });
 
   it("recalculates supported formulas without replacing formula text", () => {

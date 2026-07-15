@@ -71,7 +71,15 @@ describe("atomic reviewed import persistence", () => {
         (row: Record<string, unknown>) =>
           row.organisationId === "app_org_1" &&
           row.uploadId === "upload_1" &&
-          row.tradebookImportId === "import_1",
+          row.tradebookImportId === "import_1" &&
+          typeof row.total === "string" &&
+          Number(row.total) > 0 &&
+          typeof (row.fieldData as { total?: unknown })?.total === "number" &&
+          typeof (row.fieldData as { client_name?: unknown })?.client_name ===
+            "string" &&
+          typeof (row.fieldData as { po_ref_no?: unknown })?.po_ref_no ===
+            "string" &&
+          typeof (row.fieldData as { po_date?: unknown })?.po_date === "string",
       ),
     ).toBe(true);
     expect(
