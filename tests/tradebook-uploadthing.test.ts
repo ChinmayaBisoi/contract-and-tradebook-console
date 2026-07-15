@@ -97,6 +97,7 @@ describe("private tradebook upload lifecycle", () => {
     expect(upsert).toHaveBeenCalledWith({
       where: { uploadId: "upload_1" },
       create: {
+        id: "upload_1",
         organisationId: "org_1",
         uploadId: "upload_1",
         status: "PENDING",
