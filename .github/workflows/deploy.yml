@@ -1,10 +1,14 @@
-name: Deploy To EC2
+name: Deploy To AWS
 
 on:
   push:
     branches:
       - staging
       - main
+
+permissions:
+  contents: read
+  id-token: write
 
 concurrency:
   group: deploy-${{ github.ref_name }}
@@ -16,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
-    defaults:
-      run:
-        working-directory: .
-
     env:
-      APP_NAME: contract-console
-      REMOTE_RELEASES_ROOT: /opt/contract-console/releases
-      REMOTE_DEPLOY_SCRIPT: /opt/contract-console/releases/${{ github.sha }}/scripts/ec2/deploy.sh
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+      CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+      LOG_GROUP: ${{ vars.ECS_LOG_GROUP }}
+      IMAGE_TAG: ${{ github.sha }}
 
     steps:
       - name: Checkout
@@ -49,41 +53,62 @@ jobs:
       - name: Build Next.js standalone app
         run: bun run build
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push production image
+        id: image
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker build --target production -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+
       - name: Run Prisma migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: bun run db:deploy
 
-      - name: Prepare standalone artifact
-        run: |
-          rm -rf dist
-          mkdir -p dist/.next
-          cp -R .next/standalone/. dist/
-          cp -R .next/static dist/.next/static
-          cp -R public dist/public
-          cp -R scripts dist/scripts
-
-      - name: Configure SSH key
+      - name: Render ECS task definition
         env:
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          IMAGE_URI: ${{ steps.image.outputs.image_uri }}
+          TASK_FAMILY: ${{ env.TASK_FAMILY }}
+          CONTAINER_NAME: ${{ env.CONTAINER_NAME }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+          LOG_GROUP: ${{ env.LOG_GROUP }}
+          EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN }}
+          DATABASE_URL_SECRET_ARN: ${{ vars.DATABASE_URL_SECRET_ARN }}
+          DIRECT_URL_SECRET_ARN: ${{ vars.DIRECT_URL_SECRET_ARN }}
+          CLERK_SECRET_KEY_SECRET_ARN: ${{ vars.CLERK_SECRET_KEY_SECRET_ARN }}
+          UPLOADTHING_TOKEN_SECRET_ARN: ${{ vars.UPLOADTHING_TOKEN_SECRET_ARN }}
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL: ${{ vars.NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL }}
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${{ vars.NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL }}
+        run: >
+          node scripts/aws/render-ecs-task-definition.mjs
+          aws/task-definition.json
+          aws/task-definition.rendered.json
 
-      - name: Upload release to EC2
+      - name: Deploy ECS service
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new "$EC2_USER@$EC2_HOST" "mkdir -p $REMOTE_RELEASES_ROOT/${GITHUB_SHA}"
-          rsync -az --delete -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new" dist/ "$EC2_USER@$EC2_HOST:$REMOTE_RELEASES_ROOT/${GITHUB_SHA}/"
+          TASK_DEFINITION_PATH: aws/task-definition.rendered.json
+          ECS_CLUSTER: ${{ env.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ env.ECS_SERVICE }}
+        run: ./scripts/aws/deploy-ecs.sh
 
-      - name: Activate release and check health
+      - name: Smoke check CloudFront
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-        run: |
-          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new "$EC2_USER@$EC2_HOST" "sudo bash $REMOTE_DEPLOY_SCRIPT $REMOTE_RELEASES_ROOT/${GITHUB_SHA}"
+          CLOUDFRONT_URL: ${{ secrets.CLOUDFRONT_URL }}
+          APP_ROOT_MARKER: ContractView
+        run: ./scripts/aws/smoke-check.sh
