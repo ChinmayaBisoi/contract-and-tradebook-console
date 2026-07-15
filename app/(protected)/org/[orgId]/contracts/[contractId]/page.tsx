@@ -21,6 +21,16 @@ async function ContractDetailSection({
       id: contractId,
     }),
   );
+  void queryClient.prefetchQuery(
+    trpc.audit.list.queryOptions({
+      organisationId: orgId,
+      filters: { contractId },
+      page: 1,
+      pageSize: 10,
+      sort: "occurredAt",
+      sortDirection: "desc",
+    }),
+  );
 
   return <ContractDetail organisationId={orgId} contractId={contractId} />;
 }

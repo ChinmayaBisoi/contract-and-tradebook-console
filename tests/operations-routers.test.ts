@@ -64,6 +64,37 @@ describe("organisation operations routers", () => {
     });
   });
 
+  it("searches contract IDs in both the result and count queries", async () => {
+    const queryRaw = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const caller = createCaller({
+      organisationUser: { findUnique: vi.fn().mockResolvedValue(membership) },
+      contract: { count },
+      $queryRaw: queryRaw,
+    });
+
+    await caller.contract.list({
+      organisationId: "org_1",
+      filters: { search: "contract_abc" },
+      page: 1,
+      pageSize: 10,
+      sort: "updatedAt",
+      sortDirection: "desc",
+    });
+
+    const query = queryRaw.mock.calls[0]?.[0] as { strings?: string[] };
+    expect(query.strings?.join(" ")).toContain('contract."id" ILIKE');
+    expect(count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        OR: expect.arrayContaining([
+          {
+            id: { contains: "contract_abc", mode: "insensitive" },
+          },
+        ]),
+      }),
+    });
+  });
+
   it("lists organisation and contract-scoped line items", async () => {
     const findMany = vi
       .fn()
@@ -209,5 +240,33 @@ describe("organisation operations routers", () => {
         email: "owner@example.com",
       },
     ]);
+  });
+
+  it("scopes audit history to a contract inside the organisation", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const caller = createCaller({
+      organisationUser: { findUnique: vi.fn().mockResolvedValue(membership) },
+      auditEvent: { findMany, count },
+    });
+
+    await caller.audit.list({
+      organisationId: "org_1",
+      filters: { contractId: "contract_1" },
+      page: 1,
+      pageSize: 10,
+      sort: "occurredAt",
+      sortDirection: "desc",
+    });
+
+    const expectedWhere = {
+      organisationId: "org_1",
+      contractId: "contract_1",
+    };
+    expect(findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: expectedWhere }),
+    );
+    expect(count).toHaveBeenCalledWith({ where: expectedWhere });
   });
 });

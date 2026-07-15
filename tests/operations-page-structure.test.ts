@@ -53,4 +53,16 @@ describe("operations page query structure", () => {
 
     expect(source).toContain("trpc.audit.list.queryFilter({ organisationId })");
   });
+
+  it("prefetches and renders contract-scoped history on contract details", () => {
+    const page = read(
+      "app/(protected)/org/[orgId]/contracts/[contractId]/page.tsx",
+    );
+    const detail = read("components/contracts/contract-detail.tsx");
+
+    expect(page).toContain("trpc.audit.list.queryOptions");
+    expect(page).toContain("contractId");
+    expect(detail).toContain("ContractAuditTrail");
+    expect(detail).toContain("trpc.audit.list.queryFilter");
+  });
 });

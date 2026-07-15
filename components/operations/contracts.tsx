@@ -6,17 +6,22 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { ArrowRightIcon, ExternalLinkIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  ExternalLinkIcon,
+  SearchIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 import { toast } from "sonner";
-
-import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
 import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
+import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
+import { ImportContractDialog } from "@/components/contracts/import-contract-dialog";
 import { DebouncedInput } from "@/components/filters/debounced-input";
-import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   contractSearchParams,
   getContractListInput,
@@ -28,6 +33,7 @@ import {
   TableEmptyState,
   toggleSortDirection,
 } from "@/components/operations/table-states";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -128,7 +134,9 @@ export function OrganisationContracts({
       toast.success("Contract deleted");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Contract could not be deleted",
+        error instanceof Error
+          ? error.message
+          : "Contract could not be deleted",
       );
     }
   }
@@ -150,11 +158,12 @@ export function OrganisationContracts({
             PO commitments, provenance, and tradebook totals in one register.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <p className="text-sm tabular-nums text-muted-foreground">
             {pagination.total} contracts
           </p>
           <CreateContractDialog organisationId={organisationId} />
+          <ImportContractDialog organisationId={organisationId} />
         </div>
       </div>
       <Card aria-busy={pending || isFetching}>
@@ -168,7 +177,7 @@ export function OrganisationContracts({
             <DebouncedInput
               id="contract-search"
               aria-label="Search contracts"
-              placeholder="Search client or PO reference"
+              placeholder="Search client, PO reference, or contract ID"
               value={state.q}
               className="pl-9"
               onCommit={(q) => update({ q })}

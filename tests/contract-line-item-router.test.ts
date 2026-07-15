@@ -10,7 +10,11 @@ const ownerAuth = {
 };
 
 function createCaller(db: Record<string, unknown>) {
-  return appRouter.createCaller({ headers: new Headers(), auth: ownerAuth, db });
+  return appRouter.createCaller({
+    headers: new Headers(),
+    auth: ownerAuth,
+    db,
+  });
 }
 
 function createDb(overrides: Partial<Record<string, unknown>>) {
@@ -44,8 +48,8 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
 
   const db = {
     ...tx,
-    $transaction: vi.fn(async (callback: (arg: typeof tx) => Promise<unknown>) =>
-      callback(tx),
+    $transaction: vi.fn(
+      async (callback: (arg: typeof tx) => Promise<unknown>) => callback(tx),
     ),
     ...overrides,
   };
@@ -54,6 +58,98 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
 }
 
 describe("contract and line item routers", () => {
+  it("imports a reviewed AI proposal as one atomic draft", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.create.mockResolvedValue({
+      id: "contract_ai",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-AI-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "AI_EXTRACT",
+      paymentTerms: "Net 30",
+      deliveryTerms: "FOB",
+      total: { toString: () => "240" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [
+        {
+          id: "line_ai",
+          description: "Copper",
+          quantity: { toString: () => "2" },
+          quantityUnit: "MT",
+          unitPrice: { toString: () => "120" },
+          pricingUnit: "MT",
+          total: { toString: () => "240" },
+          sortOrder: 0,
+          updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+        },
+      ],
+      auditEvents: [],
+    });
+
+    const result = await createCaller(db).contract.importDraft({
+      organisationId: "org_1",
+      sourceType: "AI_EXTRACT",
+      proposal: {
+        contract: {
+          clientName: "Acme",
+          poRefNo: "PO-AI-1",
+          poDate: new Date("2026-07-01T00:00:00.000Z"),
+          paymentTerms: "Net 30",
+          deliveryTerms: "FOB",
+        },
+        items: [
+          {
+            description: "Copper",
+            quantity: 2,
+            quantityUnit: "MT",
+            unitPrice: 120,
+            pricingUnit: "MT",
+          },
+        ],
+      },
+    });
+
+    expect(result).toMatchObject({
+      id: "contract_ai",
+      sourceType: "AI_EXTRACT",
+      total: "240",
+    });
+    expect(db.$transaction).toHaveBeenCalledOnce();
+    expect(tx.contract.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        sourceType: "AI_EXTRACT",
+        total: expect.objectContaining({}),
+        fieldData: expect.objectContaining({ total: 240 }),
+        lineItems: {
+          create: [
+            expect.objectContaining({
+              description: "Copper",
+              sortOrder: 0,
+              total: expect.objectContaining({}),
+            }),
+          ],
+        },
+      }),
+      include: expect.any(Object),
+    });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "IMPORT",
+          contractId: "contract_ai",
+          afterState: expect.objectContaining({
+            sourceType: "AI_EXTRACT",
+            itemCount: 1,
+            total: 240,
+          }),
+        }),
+      }),
+    );
+  });
+
   it("creates draft contracts and records a create event", async () => {
     const { db, tx } = createDb({});
     tx.contract.create.mockResolvedValue({

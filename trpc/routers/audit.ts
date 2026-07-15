@@ -35,6 +35,7 @@ const auditListInput = z.object({
       action: z.enum(actions).optional(),
       entityType: z.enum(entityTypes).optional(),
       actorId: z.string().min(1).optional(),
+      contractId: z.string().min(1).optional(),
       occurredFrom: z.coerce.date().optional(),
       occurredTo: z.coerce.date().optional(),
     })
@@ -97,6 +98,7 @@ export const auditRouter = createTRPCRouter({
       if (input.filters.action) where.action = input.filters.action;
       if (input.filters.entityType) where.entityType = input.filters.entityType;
       if (input.filters.actorId) where.actorClerkUserId = input.filters.actorId;
+      if (input.filters.contractId) where.contractId = input.filters.contractId;
       if (input.filters.search) {
         where.OR = [
           {
