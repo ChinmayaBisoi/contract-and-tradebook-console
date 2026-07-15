@@ -451,6 +451,7 @@ export const tradebookImportRouter = createTRPCRouter({
       importedContractCount: record.importedContractCount,
       importedLineItemCount: record.importedLineItemCount,
       failureMessage: record.failureMessage,
+      review: reviewState(record),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };
