@@ -13,6 +13,15 @@ describe("organisation permission matrix", () => {
     }
   });
 
+  it.each([
+    "OWNER",
+    "ADMIN",
+    "MEMBER",
+  ] as const)("lets active %s users read and create imports", (role) => {
+    expect(hasOrgPermission({ role, action: "import:read" })).toBe(true);
+    expect(hasOrgPermission({ role, action: "import:create" })).toBe(true);
+  });
+
   it("lets admins manage member invitations and statuses without role access", () => {
     expect(
       hasOrgPermission({ role: "ADMIN", action: "organisation:read" }),
@@ -65,12 +74,12 @@ describe("organisation permission matrix", () => {
     expect(
       hasOrgPermission({ role: "ADMIN", action: "organisation:delete" }),
     ).toBe(false);
-    expect(
-      hasOrgPermission({ role: "ADMIN", action: "contract:create" }),
-    ).toBe(true);
-    expect(
-      hasOrgPermission({ role: "ADMIN", action: "contract:update" }),
-    ).toBe(true);
+    expect(hasOrgPermission({ role: "ADMIN", action: "contract:create" })).toBe(
+      true,
+    );
+    expect(hasOrgPermission({ role: "ADMIN", action: "contract:update" })).toBe(
+      true,
+    );
     expect(
       hasOrgPermission({ role: "ADMIN", action: "line-item:create" }),
     ).toBe(true);
@@ -87,6 +96,8 @@ describe("organisation permission matrix", () => {
         "contract:read",
         "line-item:read",
         "audit:read",
+        "import:read",
+        "import:create",
       ]),
     );
     expect(

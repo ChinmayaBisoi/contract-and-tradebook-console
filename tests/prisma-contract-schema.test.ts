@@ -57,7 +57,7 @@ describe("contract domain Prisma schema", () => {
     expect(organisation).toMatch(/tradebookImports\s+TradebookImport\[\]/);
     expect(upload).toMatch(/uploadedByClerkUserId\s+String/);
     expect(upload).toMatch(/sourceType\s+UploadSourceType/);
-    expect(upload).toMatch(/status\s+UploadStatus\s+@default\(UPLOADED\)/);
+    expect(upload).toMatch(/status\s+UploadStatus\s+@default\(PENDING\)/);
     expect(upload).toMatch(/storageKey\s+String\?/);
     expect(upload).toMatch(/blobUrl\s+String\?/);
     expect(upload).toMatch(/tradebookImport\s+TradebookImport\?/);
