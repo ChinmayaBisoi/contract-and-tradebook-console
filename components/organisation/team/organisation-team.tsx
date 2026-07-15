@@ -2,9 +2,10 @@
 
 import {
   QueryErrorResetBoundary,
+  keepPreviousData,
   useMutation,
+  useQuery,
   useQueryClient,
-  useSuspenseQuery,
 } from "@tanstack/react-query";
 import {
   RefreshCwIcon,
@@ -17,7 +18,9 @@ import { Component, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CreateInvitationDialog } from "@/components/invitations/create-invitation-dialog";
+import { DebouncedInput } from "@/components/filters/debounced-input";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
+import { toggleSortDirection } from "@/components/operations/table-states";
 import {
   type OrganisationTeamMember,
   OrganisationTeamTable,
@@ -32,7 +35,6 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
@@ -208,14 +210,14 @@ function TeamToolbar({
           aria-hidden="true"
           className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
         />
-        <Input
+        <DebouncedInput
           id="team-member-search"
           type="search"
           aria-label="Search members"
           placeholder="Search name or email"
           className="pl-8"
           value={filterValue(filters, "search")}
-          onChange={(event) => onFilterChange("search", event.target.value)}
+          onCommit={(value) => onFilterChange("search", value)}
         />
       </label>
       <NativeSelect
@@ -274,12 +276,19 @@ export function OrganisationTeam({
     sort: queryState.sort,
     sortDirection: queryState.sortDirection,
   };
-  const { data: organisation } = useSuspenseQuery(
+  const { data: organisation, isLoading: organisationLoading } = useQuery(
     trpc.organisation.get.queryOptions({ id: organisationId }),
   );
-  const { data } = useSuspenseQuery(
-    trpc.organisation.listMembers.queryOptions(input),
-  ) as { data: TeamResult };
+  const { data, isLoading, isFetching, error, refetch } = useQuery({
+    ...trpc.organisation.listMembers.queryOptions(input),
+    placeholderData: keepPreviousData,
+  }) as {
+    data: TeamResult | undefined;
+    isLoading: boolean;
+    isFetching: boolean;
+    error: Error | null;
+    refetch: () => Promise<unknown>;
+  };
   const createInvitation = useMutation(
     trpc.invitation.create.mutationOptions(),
   );
@@ -293,7 +302,10 @@ export function OrganisationTeam({
     trpc.organisation.removeMember.mutationOptions(),
   );
   const hasFilters = queryState.filters.length > 0;
-  const requesterRole = organisation.role as "OWNER" | "ADMIN" | "MEMBER";
+  const requesterRole = (organisation?.role ?? "MEMBER") as
+    | "OWNER"
+    | "ADMIN"
+    | "MEMBER";
   const isMutating =
     createInvitation.isPending ||
     updateMemberRole.isPending ||
@@ -382,10 +394,11 @@ export function OrganisationTeam({
   function handleSort(sort: TeamSort) {
     updateQuery({
       sort,
-      sortDirection:
-        queryState.sort === sort && queryState.sortDirection === "asc"
-          ? "desc"
-          : "asc",
+      sortDirection: toggleSortDirection(
+        queryState.sort,
+        queryState.sortDirection,
+        sort,
+      ),
     });
   }
 
@@ -393,19 +406,29 @@ export function OrganisationTeam({
     updateQuery({ filters: [] });
   }
 
+  const members = data?.data ?? [];
+  const pagination = data?.pagination ?? {
+    page: queryState.page,
+    pageSize: queryState.pageSize,
+    total: 0,
+    pageCount: 0,
+  };
   return (
     <section aria-labelledby="organisation-team-title" className="space-y-4">
       <TeamHeading
         organisationId={organisationId}
-        organisationName={organisation.name}
+        organisationName={organisation?.name ?? "Organisation"}
         requesterRole={requesterRole}
-        total={data.pagination.total}
+        total={pagination.total}
         isInvitationPending={createInvitation.isPending}
         mutationError={mutationError}
         onCreateInvitation={handleCreateInvitation}
       />
 
-      <Card aria-busy={isTransitioning}>
+      {error ? (
+        <TeamSectionError onRetry={() => void refetch()} />
+      ) : (
+        <Card aria-busy={isTransitioning || isFetching || organisationLoading}>
         <TeamToolbar
           filters={queryState.filters}
           hasFilters={hasFilters}
@@ -414,12 +437,15 @@ export function OrganisationTeam({
         />
         <CardContent className="px-0">
           <OrganisationTeamTable
-            members={data.data}
+            members={members}
             requesterRole={requesterRole}
             isMutating={isMutating}
             hasFilters={hasFilters}
             sort={queryState.sort}
             sortDirection={queryState.sortDirection}
+            isLoading={isLoading || organisationLoading}
+            isFetching={isFetching}
+            hasData={Boolean(data)}
             onSort={handleSort}
             onChangeRole={(member, role) =>
               runMemberMutation(
@@ -453,9 +479,9 @@ export function OrganisationTeam({
           />
           <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>
-              {data.pagination.total === 0
+              {pagination.total === 0
                 ? "No results"
-                : `Page ${data.pagination.page} of ${Math.max(data.pagination.pageCount, 1)}`}
+                : `Page ${pagination.page} of ${Math.max(pagination.pageCount, 1)}`}
             </span>
             <div className="flex flex-wrap items-center gap-2">
               <label
@@ -492,8 +518,8 @@ export function OrganisationTeam({
                 variant="outline"
                 size="sm"
                 disabled={
-                  data.pagination.pageCount === 0 ||
-                  queryState.page >= data.pagination.pageCount
+                  pagination.pageCount === 0 ||
+                  queryState.page >= pagination.pageCount
                 }
                 onClick={() => updateQuery({ page: queryState.page + 1 })}
               >
@@ -503,6 +529,7 @@ export function OrganisationTeam({
           </div>
         </CardContent>
       </Card>
+      )}
     </section>
   );
 }

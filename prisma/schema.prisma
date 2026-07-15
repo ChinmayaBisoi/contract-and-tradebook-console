@@ -212,6 +212,7 @@ model Contract {
   poDate               DateTime
   paymentTerms         String?
   deliveryTerms        String?
+  total                Decimal          @default(0)
   fieldData            Json
   createdByClerkUserId String
   finalizedAt          DateTime?

@@ -1,10 +1,18 @@
 "use client";
 
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { SearchIcon, XIcon } from "lucide-react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
+import { toast } from "sonner";
 
+import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
+import { DebouncedInput } from "@/components/filters/debounced-input";
 import {
   getLineItemListInput,
   lineItemSearchParams,
@@ -13,19 +21,19 @@ import { useOrganisationEvents } from "@/components/realtime/use-organisation-ev
 import {
   OperationsPagination,
   SortButton,
+  TableBodyLoadingState,
   TableEmptyState,
+  toggleSortDirection,
 } from "@/components/operations/table-states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -50,6 +58,7 @@ export function OrganisationLineItems({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const deleteLineItem = useMutation(trpc.lineItem.delete.mutationOptions());
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(lineItemSearchParams, {
     history: "push",
@@ -57,7 +66,10 @@ export function OrganisationLineItems({
     startTransition,
   });
   const input = getLineItemListInput(organisationId, contractId, state);
-  const { data } = useSuspenseQuery(trpc.lineItem.list.queryOptions(input));
+  const { data, isLoading, isFetching } = useQuery({
+    ...trpc.lineItem.list.queryOptions(input),
+    placeholderData: keepPreviousData,
+  });
   useOrganisationEvents({
     organisationId,
     onEvent: async (event) => {
@@ -87,9 +99,50 @@ export function OrganisationLineItems({
   const sort = (column: typeof state.sort) =>
     update({
       sort: column,
-      direction:
-        state.sort === column && state.direction === "asc" ? "desc" : "asc",
+      direction: toggleSortDirection(state.sort, state.direction, column),
     });
+  const facets = data?.facets ?? {
+    contracts: [],
+    quantityUnits: [],
+    pricingUnits: [],
+    sourceTypes: [],
+  };
+  const pagination = data?.pagination ?? {
+    page: state.page,
+    pageSize: state.pageSize,
+    total: 0,
+    pageCount: 0,
+  };
+  const rows = data?.data ?? [];
+  const showEmpty = !isLoading && rows.length === 0;
+  const columnCount = contractId ? 8 : 10;
+
+  async function handleDeleteLineItem(id: string, currentContractId: string) {
+    if (!window.confirm("Delete this draft line item?")) {
+      return;
+    }
+
+    try {
+      await deleteLineItem.mutateAsync({ organisationId, id });
+      await Promise.all([
+        queryClient.invalidateQueries(trpc.lineItem.list.queryFilter(input)),
+        queryClient.invalidateQueries(
+          trpc.contract.list.queryFilter({ organisationId }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.contract.get.queryFilter({
+            organisationId,
+            id: currentContractId,
+          }),
+        ),
+      ]);
+      toast.success("Line item deleted");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Line item could not be deleted",
+      );
+    }
+  }
 
   return (
     <section aria-labelledby="line-items-title" className="space-y-4">
@@ -102,21 +155,21 @@ export function OrganisationLineItems({
             id="line-items-title"
             className="text-2xl font-semibold tracking-tight"
           >
-            {data.contract
+            {data?.contract
               ? `${data.contract.poRefNo} line items`
               : "Line items"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {data.contract
+            {data?.contract
               ? `${data.contract.clientName} · focused contract view`
               : "Every priced row across this organisation."}
           </p>
         </div>
         <p className="text-sm tabular-nums text-muted-foreground">
-          {data.pagination.total} items
+          {pagination.total} items
         </p>
       </div>
-      <Card aria-busy={pending}>
+      <Card aria-busy={pending || isFetching}>
         <CardHeader className="grid gap-3 border-b md:grid-cols-2 xl:grid-cols-4">
           <label htmlFor="line-item-search" className="relative md:col-span-2">
             <span className="sr-only">Search line items</span>
@@ -124,13 +177,13 @@ export function OrganisationLineItems({
               className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
+            <DebouncedInput
               id="line-item-search"
               aria-label="Search line items"
               placeholder="Search item, description, PO or client"
               className="pl-9"
               value={state.q}
-              onChange={(e) => update({ q: e.target.value })}
+              onCommit={(q) => update({ q })}
             />
           </label>
           {!contractId ? (
@@ -140,7 +193,7 @@ export function OrganisationLineItems({
               onChange={(e) => update({ contract: e.target.value })}
             >
               <NativeSelectOption value="">All contracts</NativeSelectOption>
-              {data.facets.contracts.map((item) => (
+              {facets.contracts.map((item) => (
                 <NativeSelectOption key={item.id} value={item.id}>
                   {item.poRefNo} · {item.clientName}
                 </NativeSelectOption>
@@ -157,7 +210,7 @@ export function OrganisationLineItems({
             }
           >
             <NativeSelectOption value="">All sources</NativeSelectOption>
-            {data.facets.sourceTypes.map((value) => (
+            {facets.sourceTypes.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {value.replace("_", " ")}
               </NativeSelectOption>
@@ -169,7 +222,7 @@ export function OrganisationLineItems({
             onChange={(e) => update({ quantityUnit: e.target.value })}
           >
             <NativeSelectOption value="">All quantity units</NativeSelectOption>
-            {data.facets.quantityUnits.map((value) => (
+            {facets.quantityUnits.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {value}
               </NativeSelectOption>
@@ -181,26 +234,26 @@ export function OrganisationLineItems({
             onChange={(e) => update({ pricingUnit: e.target.value })}
           >
             <NativeSelectOption value="">All pricing units</NativeSelectOption>
-            {data.facets.pricingUnits.map((value) => (
+            {facets.pricingUnits.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {value}
               </NativeSelectOption>
             ))}
           </NativeSelect>
           <div className="flex gap-2">
-            <Input
+            <DebouncedInput
               inputMode="decimal"
               aria-label="Minimum total"
               placeholder="Min total"
               value={state.totalMin}
-              onChange={(e) => update({ totalMin: e.target.value })}
+              onCommit={(totalMin) => update({ totalMin })}
             />
-            <Input
+            <DebouncedInput
               inputMode="decimal"
               aria-label="Maximum total"
               placeholder="Max total"
               value={state.totalMax}
-              onChange={(e) => update({ totalMax: e.target.value })}
+              onCommit={(totalMax) => update({ totalMax })}
             />
             <Button
               type="button"
@@ -226,7 +279,7 @@ export function OrganisationLineItems({
           </div>
         </CardHeader>
         <CardContent className="px-0">
-          {data.data.length === 0 ? (
+          {showEmpty ? (
             <TableEmptyState filtered={filtered} noun="line items" />
           ) : (
             <div className="overflow-x-auto">
@@ -294,10 +347,19 @@ export function OrganisationLineItems({
                         onSort={sort}
                       />
                     </TableHead>
+                    <TableHead>
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {data.data.map((row) => (
+                <TableBodyLoadingState
+                  isLoading={isLoading}
+                  isFetching={isFetching}
+                  hasData={Boolean(data)}
+                  rowCount={state.pageSize}
+                  columnCount={columnCount}
+                >
+                  {rows.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-xs">
                         {row.workbookItemId ?? "—"}
@@ -334,14 +396,41 @@ export function OrganisationLineItems({
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {date.format(new Date(row.updatedAt))}
                       </TableCell>
+                      <TableCell>
+                        {row.contract.status === "DRAFT" ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <EditLineItemDialog
+                              organisationId={organisationId}
+                              contractId={row.contract.id}
+                              lineItem={row}
+                              disabled={row.contract.status !== "DRAFT"}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={deleteLineItem.isPending}
+                              onClick={() =>
+                                void handleDeleteLineItem(row.id, row.contract.id)
+                              }
+                            >
+                              <Trash2Icon />
+                              Delete
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            Read only
+                          </span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
+                </TableBodyLoadingState>
               </Table>
             </div>
           )}
           <OperationsPagination
-            {...data.pagination}
+            {...pagination}
             onPage={(page) => update({ page })}
             onPageSize={(pageSize) => update({ pageSize })}
           />

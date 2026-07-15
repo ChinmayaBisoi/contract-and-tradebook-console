@@ -1,11 +1,12 @@
 "use client";
 
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { EyeIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 
+import { DebouncedInput } from "@/components/filters/debounced-input";
 import {
   auditSearchParams,
   getAuditListInput,
@@ -14,7 +15,9 @@ import { useOrganisationEvents } from "@/components/realtime/use-organisation-ev
 import {
   OperationsPagination,
   SortButton,
+  TableBodyLoadingState,
   TableEmptyState,
+  toggleSortDirection,
 } from "@/components/operations/table-states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +37,6 @@ import {
 } from "@/components/ui/native-select";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -106,7 +108,10 @@ export function OrganisationAuditTrail({
     startTransition,
   });
   const input = getAuditListInput(organisationId, state);
-  const { data } = useSuspenseQuery(trpc.audit.list.queryOptions(input));
+  const { data, isLoading, isFetching } = useQuery({
+    ...trpc.audit.list.queryOptions(input),
+    placeholderData: keepPreviousData,
+  });
   useOrganisationEvents({
     organisationId,
     onEvent: async () => {
@@ -126,17 +131,22 @@ export function OrganisationAuditTrail({
   const sort = (column: typeof state.sort) =>
     update({
       sort: column,
-      direction:
-        state.sort === column && state.direction === "asc" ? "desc" : "asc",
+      direction: toggleSortDirection(state.sort, state.direction, column),
     });
+  const facets = data?.facets ?? { actions: [], entityTypes: [], actors: [] };
+  const pagination = data?.pagination ?? {
+    page: state.page,
+    pageSize: state.pageSize,
+    total: 0,
+    pageCount: 0,
+  };
+  const rows = data?.data ?? [];
+  const showEmpty = !isLoading && rows.length === 0;
 
   return (
     <section aria-labelledby="audit-title" className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Immutable activity
-          </p>
           <h2
             id="audit-title"
             className="text-2xl font-semibold tracking-tight"
@@ -148,10 +158,10 @@ export function OrganisationAuditTrail({
           </p>
         </div>
         <p className="text-sm tabular-nums text-muted-foreground">
-          {data.pagination.total} events
+          {pagination.total} events
         </p>
       </div>
-      <Card aria-busy={pending}>
+      <Card aria-busy={pending || isFetching}>
         <CardHeader className="grid gap-3 border-b md:grid-cols-2 xl:grid-cols-6">
           <label htmlFor="audit-search" className="relative md:col-span-2">
             <span className="sr-only">Search audit trail</span>
@@ -159,13 +169,13 @@ export function OrganisationAuditTrail({
               className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
+            <DebouncedInput
               id="audit-search"
               aria-label="Search audit trail"
               placeholder="Search actor, entity or record ID"
               className="pl-9"
               value={state.q}
-              onChange={(e) => update({ q: e.target.value })}
+              onCommit={(q) => update({ q })}
             />
           </label>
           <NativeSelect
@@ -178,7 +188,7 @@ export function OrganisationAuditTrail({
             }
           >
             <NativeSelectOption value="">All actions</NativeSelectOption>
-            {data.facets.actions.map((value) => (
+            {facets.actions.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {label(value)}
               </NativeSelectOption>
@@ -194,7 +204,7 @@ export function OrganisationAuditTrail({
             }
           >
             <NativeSelectOption value="">All entities</NativeSelectOption>
-            {data.facets.entityTypes.map((value) => (
+            {facets.entityTypes.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {label(value)}
               </NativeSelectOption>
@@ -206,7 +216,7 @@ export function OrganisationAuditTrail({
             onChange={(e) => update({ actor: e.target.value })}
           >
             <NativeSelectOption value="">All actors</NativeSelectOption>
-            {data.facets.actors.map((actor) => (
+            {facets.actors.map((actor) => (
               <NativeSelectOption key={actor.id} value={actor.id}>
                 {actor.name}
               </NativeSelectOption>
@@ -248,7 +258,7 @@ export function OrganisationAuditTrail({
           </div>
         </CardHeader>
         <CardContent className="px-0">
-          {data.data.length === 0 ? (
+          {showEmpty ? (
             <TableEmptyState filtered={filtered} noun="audit events" />
           ) : (
             <div className="overflow-x-auto">
@@ -297,8 +307,14 @@ export function OrganisationAuditTrail({
                     </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {data.data.map((row) => (
+                <TableBodyLoadingState
+                  isLoading={isLoading}
+                  isFetching={isFetching}
+                  hasData={Boolean(data)}
+                  rowCount={state.pageSize}
+                  columnCount={6}
+                >
+                  {rows.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="whitespace-nowrap text-sm">
                         {dateTime.format(new Date(row.occurredAt))}
@@ -510,12 +526,12 @@ export function OrganisationAuditTrail({
                       </TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
+                </TableBodyLoadingState>
               </Table>
             </div>
           )}
           <OperationsPagination
-            {...data.pagination}
+            {...pagination}
             onPage={(page) => update({ page })}
             onPageSize={(pageSize) => update({ pageSize })}
           />

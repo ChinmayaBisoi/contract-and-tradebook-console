@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { buildAuditData, writeAuditEvent } from "@/lib/audit";
 import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
-import { buildContractFieldData } from "@/lib/contracts/contract-field-data";
+import {
+  buildContractFieldData,
+  computeContractTotal,
+} from "@/lib/contracts/contract-field-data";
 import { lineItemInputSchema } from "@/lib/contracts/contract-schemas";
 import { Prisma } from "@/lib/generated/prisma/client";
 import {
@@ -185,9 +188,19 @@ async function syncContractFieldData(
     lineItems: ContractRecord["lineItems"];
   },
 ) {
+  const items = contract.lineItems.map((lineItem) => ({
+    description: lineItem.description,
+    quantity: Number(lineItem.quantity.toString()),
+    quantity_unit: lineItem.quantityUnit ?? undefined,
+    unit_price: Number(lineItem.unitPrice.toString()),
+    pricing_unit: lineItem.pricingUnit ?? undefined,
+    total: Number(lineItem.total?.toString() ?? "0"),
+  }));
+
   await tx.contract.update({
     where: { id: contract.id },
     data: {
+      total: new Prisma.Decimal(computeContractTotal(items)),
       fieldData: buildContractFieldData({
         contract: {
           clientName: contract.clientName,
@@ -196,14 +209,7 @@ async function syncContractFieldData(
           paymentTerms: contract.paymentTerms ?? undefined,
           deliveryTerms: contract.deliveryTerms ?? undefined,
         },
-        items: contract.lineItems.map((lineItem) => ({
-          description: lineItem.description,
-          quantity: Number(lineItem.quantity.toString()),
-          quantity_unit: lineItem.quantityUnit ?? undefined,
-          unit_price: Number(lineItem.unitPrice.toString()),
-          pricing_unit: lineItem.pricingUnit ?? undefined,
-          total: Number(lineItem.total?.toString() ?? "0"),
-        })),
+        items,
       }),
     },
   });

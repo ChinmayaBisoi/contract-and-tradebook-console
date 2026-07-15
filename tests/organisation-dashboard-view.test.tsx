@@ -49,6 +49,7 @@ function baseProps() {
     invitations: [invitation],
     pagination,
     isLoading: false,
+    isFetching: false,
     error: null,
     mutationError: null,
     isMutating: false,
@@ -150,9 +151,20 @@ describe("OrganisationDashboardView", () => {
 
   it("renders loading, error, and empty states", () => {
     const { rerender } = render(
-      <OrganisationDashboardView {...baseProps()} isLoading />,
+      <OrganisationDashboardView
+        {...baseProps()}
+        isLoading
+        isFetching
+        organisations={[]}
+      />,
     );
-    expect(screen.getByText("Loading organisations...")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort by organisation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort by created" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Contract Operations")).not.toBeInTheDocument();
 
     rerender(
       <OrganisationDashboardView
@@ -172,5 +184,22 @@ describe("OrganisationDashboardView", () => {
       />,
     );
     expect(screen.getByText("No organisations yet")).toBeInTheDocument();
+  });
+
+  it("shows sort direction icons on active columns", () => {
+    render(
+      <OrganisationDashboardView
+        {...baseProps()}
+        sort="name"
+        sortDirection="asc"
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Sort by organisation" }),
+    ).toHaveAttribute("aria-sort", "ascending");
+    expect(
+      screen.getByRole("button", { name: "Sort by created" }),
+    ).toHaveAttribute("aria-sort", "none");
   });
 });

@@ -1,15 +1,11 @@
 import { createLoader } from "nuqs/server";
-import { Suspense } from "react";
 
 import { OrganisationAuditTrail } from "@/components/operations/audit-trail";
 import {
   auditSearchParams,
   getAuditListInput,
 } from "@/components/operations/search-params";
-import {
-  OperationsErrorBoundary,
-  OperationsTableSkeleton,
-} from "@/components/operations/table-states";
+import { OperationsErrorBoundary } from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
 const loadAuditSearchParams = createLoader(auditSearchParams);
@@ -34,11 +30,7 @@ export default async function OrganisationAuditTrailPage({
   return (
     <HydrateClient>
       <OperationsErrorBoundary>
-        <Suspense
-          fallback={<OperationsTableSkeleton title="Loading audit events" />}
-        >
-          <OrganisationAuditTrail organisationId={orgId} />
-        </Suspense>
+        <OrganisationAuditTrail organisationId={orgId} />
       </OperationsErrorBoundary>
     </HydrateClient>
   );

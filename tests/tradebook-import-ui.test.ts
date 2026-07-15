@@ -19,19 +19,26 @@ describe("tradebook import pages", () => {
       "tradebookImport.get",
       "TradebookReviewWorkspace",
     ],
-  ])("prefetches and suspends the %s fetching component", (_, file, query, component) => {
+  ])("prefetches the %s list query", (_, file, query, component) => {
     const source = read(file);
     expect(source).toContain("prefetchQuery");
     expect(source).toContain(query);
     expect(source).toContain("<HydrateClient>");
     expect(source).toContain("<OperationsErrorBoundary>");
-    expect(source).toMatch(/<Suspense\s+fallback=/);
     expect(source).toContain(`<${component}`);
+    if (file.includes("imports/page.tsx") && !file.includes("[importId]")) {
+      expect(source).not.toMatch(/<Suspense\s+fallback=/);
+    } else {
+      expect(source).toMatch(/<Suspense\s+fallback=/);
+    }
   });
 
-  it("fetches directly inside both Suspense-wrapped components", () => {
+  it("loads import history with keepPreviousData", () => {
     expect(read("components/imports/organisation-imports.tsx")).toContain(
-      "useSuspenseQuery",
+      "useQuery",
+    );
+    expect(read("components/imports/organisation-imports.tsx")).toContain(
+      "keepPreviousData",
     );
     expect(read("components/imports/tradebook-review-workspace.tsx")).toContain(
       "useSuspenseQuery",

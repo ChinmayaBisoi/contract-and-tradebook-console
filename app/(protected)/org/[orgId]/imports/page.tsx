@@ -1,15 +1,11 @@
 import { createLoader } from "nuqs/server";
-import { Suspense } from "react";
 
 import { OrganisationImports } from "@/components/imports/organisation-imports";
 import {
   getImportListInput,
   importSearchParams,
 } from "@/components/imports/search-params";
-import {
-  OperationsErrorBoundary,
-  OperationsTableSkeleton,
-} from "@/components/operations/table-states";
+import { OperationsErrorBoundary } from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
 const loadImportSearchParams = createLoader(importSearchParams);
@@ -36,13 +32,7 @@ export default async function OrganisationImportsPage({
   return (
     <HydrateClient>
       <OperationsErrorBoundary>
-        <Suspense
-          fallback={
-            <OperationsTableSkeleton title="Loading tradebook imports" />
-          }
-        >
-          <OrganisationImports organisationId={orgId} />
-        </Suspense>
+        <OrganisationImports organisationId={orgId} />
       </OperationsErrorBoundary>
     </HydrateClient>
   );

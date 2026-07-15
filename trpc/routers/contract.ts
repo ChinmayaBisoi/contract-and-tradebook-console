@@ -72,6 +72,7 @@ type ContractListRow = {
   deliveryTerms: string | null;
   updatedAt: Date;
   itemCount: number | bigint;
+  total: string | { toString(): string };
   lineTotal: string | { toString(): string };
 };
 
@@ -108,6 +109,7 @@ type ContractWithRelations = {
   sourceType: "EXCEL" | "JSON" | "AI_EXTRACT";
   paymentTerms: string | null;
   deliveryTerms: string | null;
+  total: { toString(): string };
   fieldData: unknown;
   updatedAt: Date;
   lineItems: Array<{
@@ -173,6 +175,25 @@ function readItemsFromFieldData(fieldData: unknown) {
   }
 
   return [];
+}
+
+function mapContract(contract: ContractWithRelations) {
+  return {
+    ...contract,
+    total: contract.total.toString(),
+    lineItems: contract.lineItems.map((item) => ({
+      ...item,
+      quantity: item.quantity.toString(),
+      unitPrice: item.unitPrice.toString(),
+      total: item.total?.toString() ?? null,
+    })),
+    fieldData: {
+      ...(typeof contract.fieldData === "object" && contract.fieldData
+        ? contract.fieldData
+        : {}),
+      items: readItemsFromFieldData(contract.fieldData),
+    },
+  };
 }
 
 export const contractRouter = createTRPCRouter({
@@ -255,12 +276,13 @@ export const contractRouter = createTRPCRouter({
               contract."paymentTerms",
               contract."deliveryTerms",
               contract."updatedAt",
+              COALESCE(contract."total", 0)::text AS "total",
               COUNT(line_item."id")::integer AS "itemCount",
               COALESCE(SUM(line_item."total"), 0)::text AS "lineTotal"
             FROM "Contract" AS contract
             LEFT JOIN "LineItem" AS line_item ON line_item."contractId" = contract."id"
             WHERE ${Prisma.join(conditions, " AND ")}
-            GROUP BY contract."id"
+            GROUP BY contract."id", contract."total"
             ORDER BY ${sortColumns[input.sort]} ${direction}, contract."id" ASC
             LIMIT ${input.pageSize} OFFSET ${offset}
           `,
@@ -272,6 +294,7 @@ export const contractRouter = createTRPCRouter({
         data: rows.map((row) => ({
           ...row,
           itemCount: Number(row.itemCount),
+          total: (row.total ?? row.lineTotal).toString(),
           lineTotal: row.lineTotal.toString(),
         })),
         pagination: {
@@ -311,21 +334,7 @@ export const contractRouter = createTRPCRouter({
       });
     }
 
-    return {
-      ...contract,
-      lineItems: contract.lineItems.map((item) => ({
-        ...item,
-        quantity: item.quantity.toString(),
-        unitPrice: item.unitPrice.toString(),
-        total: item.total?.toString() ?? null,
-      })),
-      fieldData: {
-        ...(typeof contract.fieldData === "object" && contract.fieldData
-          ? contract.fieldData
-          : {}),
-        items: readItemsFromFieldData(contract.fieldData),
-      },
-    };
+    return mapContract(contract);
   }),
 
   create: protectedProcedure
@@ -350,6 +359,7 @@ export const contractRouter = createTRPCRouter({
               poDate: input.contract.poDate,
               paymentTerms: input.contract.paymentTerms,
               deliveryTerms: input.contract.deliveryTerms,
+              total: new Prisma.Decimal(0),
               fieldData: buildContractFieldData({
                 contract: input.contract,
                 items: [],
@@ -379,15 +389,7 @@ export const contractRouter = createTRPCRouter({
             },
           });
 
-          return {
-            ...created,
-            lineItems: created.lineItems.map((item) => ({
-              ...item,
-              quantity: item.quantity.toString(),
-              unitPrice: item.unitPrice.toString(),
-              total: item.total?.toString() ?? null,
-            })),
-          };
+          return mapContract(created);
         });
 
         publishRealtimeEvent({
@@ -487,15 +489,7 @@ export const contractRouter = createTRPCRouter({
             },
           });
 
-          return {
-            ...updated,
-            lineItems: updated.lineItems.map((item) => ({
-              ...item,
-              quantity: item.quantity.toString(),
-              unitPrice: item.unitPrice.toString(),
-              total: item.total?.toString() ?? null,
-            })),
-          };
+          return mapContract(updated);
         });
 
         publishRealtimeEvent({
