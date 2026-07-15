@@ -167,8 +167,11 @@ describe("OrganisationAnalytics", () => {
       await screen.findByRole("link", { name: "Import workbook" }),
     ).toHaveAttribute("href", "/org/org_1/imports");
     expect(
-      screen.getByRole("link", { name: "Export org data" }),
-    ).toHaveAttribute("href", "/api/org/org_1/export");
+      screen.getByRole("link", { name: "Export Excel" }),
+    ).toHaveAttribute("href", "/api/org/org_1/export?format=excel");
+    expect(
+      screen.getByRole("link", { name: "Export JSON" }),
+    ).toHaveAttribute("href", "/api/org/org_1/export?format=json");
   });
 
   it("shows the analytics skeleton while the client query is pending", async () => {

@@ -5,15 +5,18 @@ import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
 } from "@/lib/organisation-access";
-import { hasOrgPermission } from "@/lib/permissions";
+import {
+  buildOrganisationContractsJson,
+  buildOrganisationExportFileName,
+  buildOrganisationWorkbook,
+} from "@/lib/organisation/export";
 import { prisma } from "@/lib/prisma";
 
-function buildOrganisationExportFileName(orgId: string) {
-  return `organisation-${orgId}-export.json`;
-}
+const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: {
     params: Promise<{
       orgId: string;
@@ -26,120 +29,63 @@ export async function GET(
   }
 
   const params = await context.params;
-  const membership = await checkOrgPermission({
+  const format = request.nextUrl.searchParams.get("format");
+  if (format !== "excel" && format !== "json") {
+    return new Response("Export format must be excel or json", { status: 400 });
+  }
+
+  await checkOrgPermission({
     clerkUserId: session.userId,
     organisationId: params.orgId,
-    action: "organisation:read",
+    action: "contract:read",
     findMembership: createOrganisationMembershipFinder(prisma),
   });
 
-  const canReadUsers = hasOrgPermission({
-    role: membership.role,
-    action: "organisation:user:read",
-  });
-  const canReadInvitations = hasOrgPermission({
-    role: membership.role,
-    action: "organisation:invitation:read",
-  });
-  const canReadContracts = hasOrgPermission({
-    role: membership.role,
-    action: "contract:read",
-  });
-  const canReadLineItems = hasOrgPermission({
-    role: membership.role,
-    action: "line-item:read",
-  });
-  const canReadAudit = hasOrgPermission({
-    role: membership.role,
-    action: "audit:read",
-  });
-  const canReadImports = hasOrgPermission({
-    role: membership.role,
-    action: "import:read",
-  });
-
-  const [
-    organisation,
-    organisationUsers,
-    invitations,
-    uploads,
-    tradebookImports,
-    contracts,
-    lineItems,
-    auditEvents,
-  ] = await Promise.all([
+  const [organisation, contracts] = await Promise.all([
     prisma.organisation.findUnique({
       where: { id: params.orgId },
     }),
-    canReadUsers
-      ? prisma.organisationUser.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadInvitations
-      ? prisma.invitation.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadImports
-      ? prisma.upload.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadImports
-      ? prisma.tradebookImport.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadContracts
-      ? prisma.contract.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadLineItems
-      ? prisma.lineItem.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ createdAt: "asc" }],
-        })
-      : Promise.resolve([]),
-    canReadAudit
-      ? prisma.auditEvent.findMany({
-          where: { organisationId: params.orgId },
-          orderBy: [{ occurredAt: "asc" }],
-        })
-      : Promise.resolve([]),
+    prisma.contract.findMany({
+      where: { organisationId: params.orgId },
+      orderBy: [{ createdAt: "asc" }],
+      include: {
+        lineItems: {
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        },
+      },
+    }),
   ]);
 
   if (!organisation) {
     return new Response("Not found", { status: 404 });
   }
 
-  const body = JSON.stringify(
-    {
-      generatedAt: new Date().toISOString(),
-      organisation,
-      organisationUsers,
-      invitations,
-      uploads,
-      tradebookImports,
+  if (format === "excel") {
+    const workbook = await buildOrganisationWorkbook({
+      organisation: {
+        id: organisation.id,
+        name: organisation.name,
+      },
       contracts,
-      lineItems,
-      auditEvents,
-    },
-    null,
-    2,
-  );
+    });
+
+    return new Response(workbook, {
+      status: 200,
+      headers: {
+        "Content-Type": XLSX_MIME,
+        "Content-Disposition": `attachment; filename="${buildOrganisationExportFileName({ orgId: params.orgId, format })}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
+  const body = JSON.stringify(buildOrganisationContractsJson(contracts), null, 2);
 
   return new Response(body, {
     status: 200,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${buildOrganisationExportFileName(params.orgId)}"`,
+      "Content-Disposition": `attachment; filename="${buildOrganisationExportFileName({ orgId: params.orgId, format })}"`,
       "Cache-Control": "no-store",
     },
   });
