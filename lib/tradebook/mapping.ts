@@ -18,7 +18,7 @@ const fieldAliases = {
     poRefNo: ["porefno", "poreference", "ponumber", "purchaseordernumber"],
     description: ["description", "itemdescription", "productdescription"],
     quantity: ["quantity", "qty"],
-    quantityUnit: ["quantityunit", "qtyunit", "unitofmeasure", "uom"],
+    quantityUnit: ["quantityunit", "qtyunit", "unitofmeasure", "uom", "unit"],
     unitPrice: ["unitprice", "price", "rate"],
     pricingUnit: ["pricingunit", "priceunit", "rateunit"],
     total: ["linetotal", "total", "amount", "lineamount"],

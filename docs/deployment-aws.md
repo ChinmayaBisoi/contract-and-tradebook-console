@@ -53,7 +53,7 @@ Recommended CloudFront behaviors:
 
 ### GitHub environment secrets
 
-Set these in both `staging` and `production` environments:
+Set these in the `production` environment:
 
 - `AWS_DEPLOY_ROLE_ARN`
 - `DATABASE_URL`
@@ -62,7 +62,7 @@ Set these in both `staging` and `production` environments:
 
 ### GitHub environment variables
 
-Set these in both `staging` and `production` environments:
+Set these in the `production` environment:
 
 - `AWS_REGION`
 - `ECR_REPOSITORY`
@@ -94,7 +94,7 @@ At minimum, the ECS task should receive:
 
 ## 4) Deployment workflow
 
-On pushes to `staging` or `main`, the workflow:
+On pushes to `main`, the workflow:
 
 1. installs dependencies with Bun
 2. runs lint, tests, Prisma generation, and a production build
@@ -106,6 +106,7 @@ On pushes to `staging` or `main`, the workflow:
 8. registers the new ECS task definition and updates the ECS service
 9. waits for ECS to reach steady state
 10. smoke-checks the CloudFront URL and `/api/health`
+11. logs the Deployment URL in the Actions output and step summary
 
 ## 5) Manual AWS setup checklist
 

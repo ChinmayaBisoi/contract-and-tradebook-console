@@ -340,8 +340,6 @@ export function buildImportDraft({
       const rawDescription = value(row, lineAnalysis.mapping, "description");
       const quantity = numeric(value(row, lineAnalysis.mapping, "quantity"));
       const unitPrice = numeric(value(row, lineAnalysis.mapping, "unitPrice"));
-      const rawQuantityUnit = value(row, lineAnalysis.mapping, "quantityUnit");
-      const rawPricingUnit = value(row, lineAnalysis.mapping, "pricingUnit");
       const totalColumn = column(lineAnalysis.mapping, "total");
       const recalculatedTotal = formulaValues.get(
         `${lineSheet.name}!${String.fromCharCode(64 + totalColumn)}${rowNumber}`,
@@ -427,26 +425,6 @@ export function buildImportDraft({
           field: "unitPrice",
           code: "NONNEGATIVE",
           message: "Unit price must be nonnegative.",
-        });
-      }
-      if (hasText(rawQuantityUnit) && !isStringLike(rawQuantityUnit)) {
-        errors.push({
-          sheet: lineSheet.name,
-          row: rowNumber,
-          column: column(lineAnalysis.mapping, "quantityUnit"),
-          field: "quantityUnit",
-          code: "INVALID_TYPE",
-          message: "Quantity unit must be text when provided.",
-        });
-      }
-      if (hasText(rawPricingUnit) && !isStringLike(rawPricingUnit)) {
-        errors.push({
-          sheet: lineSheet.name,
-          row: rowNumber,
-          column: column(lineAnalysis.mapping, "pricingUnit"),
-          field: "pricingUnit",
-          code: "INVALID_TYPE",
-          message: "Pricing unit must be text when provided.",
         });
       }
 

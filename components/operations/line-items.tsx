@@ -12,6 +12,8 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
+import { CreateLineItemDialog } from "@/components/contracts/create-line-item-dialog";
+import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { DebouncedInput } from "@/components/filters/debounced-input";
 import {
   getLineItemListInput,
@@ -165,9 +167,33 @@ export function OrganisationLineItems({
               : "Every priced row across this organisation."}
           </p>
         </div>
-        <p className="text-sm tabular-nums text-muted-foreground">
-          {pagination.total} items
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm tabular-nums text-muted-foreground">
+            {pagination.total} items
+          </p>
+          {contractId && data?.contract?.status === "DRAFT" ? (
+            <>
+              <EditContractDialog
+                organisationId={organisationId}
+                contract={{
+                  id: data.contract.id,
+                  clientName: data.contract.clientName,
+                  poRefNo: data.contract.poRefNo,
+                  poDate: new Date(data.contract.poDate),
+                  paymentTerms: data.contract.paymentTerms,
+                  deliveryTerms: data.contract.deliveryTerms,
+                  total: data.contract.total,
+                  status: data.contract.status,
+                }}
+              />
+              <CreateLineItemDialog
+                organisationId={organisationId}
+                contractId={data.contract.id}
+                disabled={false}
+              />
+            </>
+          ) : null}
+        </div>
       </div>
       <Card aria-busy={pending || isFetching}>
         <CardHeader className="grid gap-3 border-b md:grid-cols-2 xl:grid-cols-4">

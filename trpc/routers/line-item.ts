@@ -238,6 +238,7 @@ export const lineItemRouter = createTRPCRouter({
               id: true,
               poRefNo: true,
               clientName: true,
+              total: true,
               status: true,
               organisationId: true,
               poDate: true,
@@ -361,7 +362,12 @@ export const lineItemRouter = createTRPCRouter({
 
       return {
         data: rows.map(mapLineItem),
-        contract,
+        contract: contract
+          ? {
+              ...contract,
+              total: contract.total.toString(),
+            }
+          : null,
         pagination: {
           page: input.page,
           pageSize: input.pageSize,
@@ -543,9 +549,9 @@ export const lineItemRouter = createTRPCRouter({
             data: {
               description: input.lineItem.description,
               quantity: new Prisma.Decimal(input.lineItem.quantity),
-              quantityUnit: input.lineItem.quantityUnit,
+              quantityUnit: input.lineItem.quantityUnit ?? null,
               unitPrice: new Prisma.Decimal(input.lineItem.unitPrice),
-              pricingUnit: input.lineItem.pricingUnit,
+              pricingUnit: input.lineItem.pricingUnit ?? null,
               total: new Prisma.Decimal(
                 input.lineItem.quantity * input.lineItem.unitPrice,
               ),

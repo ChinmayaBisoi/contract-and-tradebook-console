@@ -7,6 +7,7 @@ import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 
 import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
+import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { DebouncedInput } from "@/components/filters/debounced-input";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
@@ -286,6 +287,9 @@ export function OrganisationContracts({
                       />
                     </TableHead>
                     <TableHead>
+                      <span className="sr-only">Edit</span>
+                    </TableHead>
+                    <TableHead>
                       <span className="sr-only">Open</span>
                     </TableHead>
                   </TableRow>
@@ -295,7 +299,7 @@ export function OrganisationContracts({
                   isFetching={isFetching}
                   hasData={Boolean(data)}
                   rowCount={state.pageSize}
-                  columnCount={10}
+                  columnCount={11}
                 >
                   {rows.map((row) => (
                     <TableRow key={row.id}>
@@ -327,6 +331,27 @@ export function OrganisationContracts({
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {date.format(new Date(row.updatedAt))}
+                      </TableCell>
+                      <TableCell>
+                        {row.status === "DRAFT" ? (
+                          <EditContractDialog
+                            organisationId={organisationId}
+                            contract={{
+                              id: row.id,
+                              clientName: row.clientName,
+                              poRefNo: row.poRefNo,
+                              poDate: new Date(row.poDate),
+                              paymentTerms: row.paymentTerms,
+                              deliveryTerms: row.deliveryTerms,
+                              total: row.total,
+                              status: row.status,
+                            }}
+                          />
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            Read only
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Button

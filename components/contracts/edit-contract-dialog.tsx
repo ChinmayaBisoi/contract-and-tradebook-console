@@ -46,6 +46,12 @@ export function EditContractDialog({
   const [error, setError] = useState<string | null>(null);
   const updateContract = useMutation(trpc.contract.update.mutationOptions());
   const isDraft = contract.status === "DRAFT";
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (!nextOpen) {
+      setError(null);
+    }
+  };
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -89,7 +95,7 @@ export function EditContractDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
           <Button variant="outline" size="sm" disabled={!isDraft} />
@@ -105,76 +111,78 @@ export function EditContractDialog({
             Contracts can be updated only while they are in draft status.
           </DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4" onSubmit={handleSubmit}>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-client">Client name</FieldLabel>
-            <Input
-              id="edit-contract-client"
-              name="clientName"
-              defaultValue={contract.clientName}
-              required
-              autoFocus
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-po-ref">
-              PO reference number
-            </FieldLabel>
-            <Input
-              id="edit-contract-po-ref"
-              name="poRefNo"
-              defaultValue={contract.poRefNo}
-              required
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-po-date">PO date</FieldLabel>
-            <Input
-              id="edit-contract-po-date"
-              name="poDate"
-              type="date"
-              defaultValue={contract.poDate.toISOString().slice(0, 10)}
-              required
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-total">
-              Derived contract total
-            </FieldLabel>
-            <Input
-              id="edit-contract-total"
-              value={contract.total}
-              readOnly
-              aria-readonly="true"
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-payment-terms">
-              Payment terms
-            </FieldLabel>
-            <Textarea
-              id="edit-contract-payment-terms"
-              name="paymentTerms"
-              defaultValue={contract.paymentTerms ?? ""}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="edit-contract-delivery-terms">
-              Delivery terms
-            </FieldLabel>
-            <Textarea
-              id="edit-contract-delivery-terms"
-              name="deliveryTerms"
-              defaultValue={contract.deliveryTerms ?? ""}
-            />
-          </Field>
-          <FieldError>{error}</FieldError>
-          <DialogFooter>
-            <Button type="submit" disabled={updateContract.isPending || !isDraft}>
-              {updateContract.isPending ? "Saving..." : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {open ? (
+          <form key={contract.id} className="grid gap-4" onSubmit={handleSubmit}>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-client">Client name</FieldLabel>
+              <Input
+                id="edit-contract-client"
+                name="clientName"
+                defaultValue={contract.clientName}
+                required
+                autoFocus
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-po-ref">
+                PO reference number
+              </FieldLabel>
+              <Input
+                id="edit-contract-po-ref"
+                name="poRefNo"
+                defaultValue={contract.poRefNo}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-po-date">PO date</FieldLabel>
+              <Input
+                id="edit-contract-po-date"
+                name="poDate"
+                type="date"
+                defaultValue={contract.poDate.toISOString().slice(0, 10)}
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-total">
+                Derived contract total
+              </FieldLabel>
+              <Input
+                id="edit-contract-total"
+                value={contract.total}
+                readOnly
+                aria-readonly="true"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-payment-terms">
+                Payment terms
+              </FieldLabel>
+              <Textarea
+                id="edit-contract-payment-terms"
+                name="paymentTerms"
+                defaultValue={contract.paymentTerms ?? ""}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="edit-contract-delivery-terms">
+                Delivery terms
+              </FieldLabel>
+              <Textarea
+                id="edit-contract-delivery-terms"
+                name="deliveryTerms"
+                defaultValue={contract.deliveryTerms ?? ""}
+              />
+            </Field>
+            <FieldError>{error}</FieldError>
+            <DialogFooter>
+              <Button type="submit" disabled={updateContract.isPending || !isDraft}>
+                {updateContract.isPending ? "Saving..." : "Save changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
