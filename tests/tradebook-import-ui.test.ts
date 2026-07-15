@@ -50,20 +50,24 @@ describe("tradebook import pages", () => {
     expect(source).toMatch(/createUpload\.mutateAsync[\s\S]*await startUpload/);
     expect(source).toContain('useUploadThing("tradebookWorkbook"');
     expect(source).toContain("markUploadFailed");
-    expect(source).toContain("prepare.mutateAsync");
+    expect(source).toContain("prepareInBackground");
+    expect(source).toMatch(/router\.push[\s\S]*prepareInBackground/);
+    expect(source).toContain("tradebook-preflight.worker.ts");
   });
 
-  it("provides a virtualized, editable, discardable review and commit flow", () => {
+  it("provides editable review, tabular mappings, and gated preview", () => {
     const source = read("components/imports/tradebook-review-workspace.tsx");
-    expect(source).toContain("useVirtualizer");
     expect(source).toContain("Export Excel");
     expect(source).toContain("Export JSON");
     expect(source).not.toContain("Export workbook");
     expect(source).toContain(`/api/org/\${organisationId}/export?format=excel`);
     expect(source).toContain(`/api/org/\${organisationId}/export?format=json`);
-    expect(source).toContain("previewSheet");
+    expect(source).toContain("getWorkbookData");
+    expect(source).toContain("useLiveWorkbookPreview");
     expect(source).toContain("suggestMapping");
-    expect(source).toContain("Manual column mapping");
+    expect(source).toContain("Import partition + Sheet mappings");
+    expect(source).toContain("Validate mappings to unlock the Excel sheet preview");
+    expect(source).toContain("needsAutoSuggestion");
     expect(source).toContain("data.review.patches");
     expect(source).toContain("sourceOrganisations.length === 1");
     expect(source).toContain("useOrganisationEvents");
@@ -73,5 +77,19 @@ describe("tradebook import pages", () => {
     expect(source).toContain("validationErrors");
     expect(source).toContain("commit.mutateAsync");
     expect(source).toContain("Sheet preview");
+  });
+
+  it("owns preview rows in the browser with live recalculation", () => {
+    const workspace = read("components/imports/tradebook-review-workspace.tsx");
+    const router = read("trpc/routers/tradebook-import.ts");
+    const hook = read("components/imports/use-live-workbook-preview.ts");
+    expect(workspace).toContain("getWorkbookData");
+    expect(workspace).not.toContain("previewSheet.queryOptions");
+    expect(workspace).toContain("rows loaded in browser");
+    expect(workspace).toContain("filterSheetRowsForOrganisation");
+    expect(hook).toContain("buildClientPreviewWorkbook");
+    expect(router).toContain("getWorkbookData: protectedProcedure");
+    expect(router).toContain("persistEditedWorkbookArtifact");
+    expect(router).toContain("editedWorkbook");
   });
 });

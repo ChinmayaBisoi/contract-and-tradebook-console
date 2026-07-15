@@ -1,6 +1,6 @@
 # Contract Import Text Examples
 
-These examples are derived from `/Users/curio/chinmaya-new/projects/contract-view/sample_tradebook_xl.xlsx` and are formatted as plain text so they can be pasted into the `Import contract` dialog's text tab.
+These examples are derived from the repo-local `sample_tradebook_xl.xlsx` workbook and are formatted as plain text so they can be pasted into the `Import contract` dialog's text tab.
 
 The source workbook rows were trimmed to a handful of representative line items per contract to keep manual testing fast while still matching realistic sample data.
 

@@ -14,6 +14,7 @@ describe("tradebook import API surface", () => {
     "prepare",
     "list",
     "get",
+    "getWorkbookData",
     "previewSheet",
     "suggestMapping",
     "saveReview",
@@ -31,6 +32,11 @@ describe("tradebook import API surface", () => {
 
   it("returns saved sparse review state so review sessions can resume", () => {
     expect(source).toContain("review: reviewState(record)");
+  });
+
+  it("persists an edited workbook artifact on save", () => {
+    expect(source).toContain("persistEditedWorkbookArtifact");
+    expect(source).toContain("editedWorkbook");
   });
 
   it("does not expose a source-workbook export path", () => {

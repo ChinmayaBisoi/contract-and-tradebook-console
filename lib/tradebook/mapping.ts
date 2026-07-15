@@ -6,6 +6,7 @@ import type { SheetSnapshot, SnapshotValue } from "@/lib/tradebook/parser";
 
 type WorkbookSnapshot = { sheets: SheetSnapshot[] };
 type SheetRole = "ORGANIZATIONS" | "LINE_ITEMS" | "SUMMARY" | "OTHER";
+type MatchType = "EXACT_ALIAS" | "FUZZY_ALIAS";
 
 const fieldAliases = {
   ORGANIZATIONS: {
@@ -49,6 +50,13 @@ const requiredFields = {
 } as const;
 
 type MappableRole = keyof typeof fieldAliases;
+type FieldHeaderMatch = {
+  columnIndex: number;
+  matchType: MatchType;
+  matchedHeader: string;
+  matchedAlias: string;
+  score: number;
+};
 type ColumnMapping = Record<string, number>;
 
 export type SheetMappingAnalysis = {
@@ -57,7 +65,15 @@ export type SheetMappingAnalysis = {
   headerRow: number | null;
   headers: string[];
   mapping: ColumnMapping;
+  headerMatches: Record<string, FieldHeaderMatch>;
   missingRequired: string[];
+};
+
+export type EditedWorkbookArtifact = {
+  storageKey: string;
+  blobUrl: string | null;
+  fileName: string;
+  savedAt: string;
 };
 
 export type WorkbookMappingAnalysis = {
@@ -69,6 +85,21 @@ export type WorkbookMappingAnalysis = {
     lineItemCount: number;
   }>;
   requiresAssistance: boolean;
+  aiAssistance?: {
+    autoRunCompleted: boolean;
+    suggestions: MappingSuggestion[];
+    lastRunAt: string | null;
+  };
+  editedWorkbook?: EditedWorkbookArtifact | null;
+};
+
+export type MappingSuggestion = {
+  sheetName: string;
+  field: string;
+  columnIndex: number;
+  confidence: number;
+  rationale: string;
+  confirmed?: boolean;
 };
 
 function normalize(value: SnapshotValue) {
@@ -78,28 +109,82 @@ function normalize(value: SnapshotValue) {
     .replace(/[^a-z0-9]/g, "");
 }
 
-function mapHeaders(headers: SnapshotValue[], role: MappableRole) {
-  const mapping: ColumnMapping = {};
+function fuzzyAliasScore(normalizedHeader: string, alias: string) {
+  if (!normalizedHeader || !alias || normalizedHeader === alias) return 0;
+  if (
+    normalizedHeader.includes(alias) ||
+    alias.includes(normalizedHeader) ||
+    normalizedHeader.startsWith(alias) ||
+    normalizedHeader.endsWith(alias)
+  ) {
+    return 0.72;
+  }
+  return 0;
+}
+
+function mapHeaders(
+  headers: SnapshotValue[],
+  role: MappableRole,
+  options: { includeFuzzy: boolean } = { includeFuzzy: true },
+) {
+  const headerMatches: Record<string, FieldHeaderMatch> = {};
   for (const [columnIndex, header] of headers.entries()) {
     const normalized = normalize(header);
     for (const [field, aliases] of Object.entries(fieldAliases[role])) {
-      if (
-        !(field in mapping) &&
-        (aliases as readonly string[]).includes(normalized)
-      ) {
-        mapping[field] = columnIndex;
+      let bestMatch: FieldHeaderMatch | null = null;
+      for (const alias of aliases as readonly string[]) {
+        if (normalized === alias) {
+          bestMatch = {
+            columnIndex,
+            matchType: "EXACT_ALIAS",
+            matchedHeader: String(header ?? ""),
+            matchedAlias: alias,
+            score: 1,
+          };
+          break;
+        }
+        const fuzzyScore = options.includeFuzzy
+          ? fuzzyAliasScore(normalized, alias)
+          : 0;
+        if (fuzzyScore > 0) {
+          bestMatch = {
+            columnIndex,
+            matchType: "FUZZY_ALIAS",
+            matchedHeader: String(header ?? ""),
+            matchedAlias: alias,
+            score: fuzzyScore,
+          };
+        }
+      }
+      if (!bestMatch) continue;
+      const current = headerMatches[field];
+      if (!current || bestMatch.score > current.score) {
+        headerMatches[field] = bestMatch;
       }
     }
   }
-  return mapping;
+  return headerMatches;
 }
 
 function candidateForRole(sheet: SheetSnapshot, role: MappableRole) {
   let best = { headerRow: 0, mapping: {} as ColumnMapping, score: 0 };
   for (let index = 0; index < Math.min(sheet.rows.length, 25); index += 1) {
-    const mapping = mapHeaders(sheet.rows[index] ?? [], role);
-    const score = Object.keys(mapping).length;
-    if (score > best.score) best = { headerRow: index + 1, mapping, score };
+    const headerMatches = mapHeaders(sheet.rows[index] ?? [], role, {
+      includeFuzzy: false,
+    });
+    const score = Object.keys(headerMatches).length;
+    if (score > best.score) {
+      best = {
+        headerRow: index + 1,
+        mapping: Object.fromEntries(
+          Object.entries(headerMatches).map(([field, match]) => [
+            field,
+            match.columnIndex,
+          ]),
+        ),
+        score,
+      };
+    }
   }
   return best;
 }
@@ -119,6 +204,7 @@ function analyzeSheet(sheet: SheetSnapshot): SheetMappingAnalysis {
       headerRow: null,
       headers: [],
       mapping: {},
+      headerMatches: {},
       missingRequired: [],
     };
   }
@@ -126,12 +212,21 @@ function analyzeSheet(sheet: SheetSnapshot): SheetMappingAnalysis {
   const headers = (sheet.rows[best.headerRow - 1] ?? []).map((value) =>
     String(value ?? ""),
   );
+  const headerMatches = mapHeaders(sheet.rows[best.headerRow - 1] ?? [], best.role, {
+    includeFuzzy: true,
+  });
   return {
     name: sheet.name,
     role: best.role,
     headerRow: best.headerRow,
     headers,
-    mapping: best.mapping,
+    mapping: Object.fromEntries(
+      Object.entries(headerMatches).map(([field, match]) => [
+        field,
+        match.columnIndex,
+      ]),
+    ),
+    headerMatches,
     missingRequired: [...requiredFields[best.role]].filter(
       (field) => !(field in best.mapping),
     ),
@@ -237,7 +332,13 @@ export function analyzeWorkbookMapping(
     sheets,
     sourceOrganisations: sourceOrganisationFacets(snapshot, sheets),
     requiresAssistance: sheets.some(
-      (sheet) => sheet.role !== "OTHER" && sheet.missingRequired.length > 0,
+      (sheet) =>
+        sheet.role !== "OTHER" &&
+        (sheet.missingRequired.length > 0 ||
+          requiredFields[sheet.role as MappableRole].some((field) => {
+            const match = sheet.headerMatches[field];
+            return Boolean(match && match.matchType !== "EXACT_ALIAS");
+          })),
     ),
   };
 }

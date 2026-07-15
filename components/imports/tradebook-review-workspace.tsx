@@ -2,10 +2,10 @@
 
 import {
   useMutation,
+  useQuery,
   useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   AlertTriangleIcon,
   ArrowLeftIcon,
@@ -17,9 +17,10 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { useLiveWorkbookPreview } from "@/components/imports/use-live-workbook-preview";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,24 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  filterSheetRowsForOrganisation,
+  type ClientWorkbookData,
+} from "@/lib/tradebook/client-preview";
+import {
+  formatMoneyDisplay,
+  multiplyToMoney,
+  toRawScaled,
+  truncateMoney,
+} from "@/lib/tradebook/money";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
 
@@ -47,6 +66,16 @@ type SheetMapping = {
   headerRow: number | null;
   headers: string[];
   mapping: Record<string, number>;
+  headerMatches?: Record<
+    string,
+    {
+      columnIndex: number;
+      matchType: "EXACT_ALIAS" | "FUZZY_ALIAS";
+      matchedHeader: string;
+      matchedAlias: string;
+      score: number;
+    }
+  >;
   missingRequired: string[];
 };
 type MappingAnalysis = {
@@ -58,6 +87,11 @@ type MappingAnalysis = {
     lineItemCount: number;
   }>;
   requiresAssistance: boolean;
+  aiAssistance?: {
+    autoRunCompleted: boolean;
+    suggestions: Suggestion[];
+    lastRunAt: string | null;
+  };
 };
 type CellPatch = {
   sheet: string;
@@ -79,6 +113,18 @@ type Suggestion = {
   columnIndex: number;
   confidence: number;
   rationale: string;
+};
+
+type MappingRow = {
+  key: string;
+  sheetName: string;
+  role: SheetRole;
+  field: string;
+  mappingColumn: number | undefined;
+  missing: boolean;
+  aiSuggestion: Suggestion | undefined;
+  aiSuggested: boolean;
+  inlineError: string | null;
 };
 
 const roleLabels: Record<SheetRole, string> = {
@@ -112,6 +158,12 @@ const fieldsByRole: Record<SheetRole, string[]> = {
   ],
   OTHER: [],
 };
+const requiredFieldsByRole: Record<SheetRole, string[]> = {
+  ORGANIZATIONS: ["sourceOrganisationId", "organisationName"],
+  LINE_ITEMS: ["workbookItemId", "poRefNo", "description", "quantity", "unitPrice"],
+  SUMMARY: ["sourceOrganisationId", "clientName", "poRefNo", "poDate"],
+  OTHER: [],
+};
 const previewSkeletonRows = [
   "preview-one",
   "preview-two",
@@ -131,6 +183,19 @@ function asMapping(value: unknown): MappingAnalysis {
       ? candidate.sourceOrganisations
       : [],
     requiresAssistance: Boolean(candidate?.requiresAssistance),
+    aiAssistance:
+      candidate?.aiAssistance &&
+        typeof candidate.aiAssistance === "object" &&
+        Array.isArray(candidate.aiAssistance.suggestions)
+        ? {
+          autoRunCompleted: Boolean(candidate.aiAssistance.autoRunCompleted),
+          suggestions: candidate.aiAssistance.suggestions as Suggestion[],
+          lastRunAt:
+            typeof candidate.aiAssistance.lastRunAt === "string"
+              ? candidate.aiAssistance.lastRunAt
+              : null,
+        }
+        : undefined,
   };
 }
 
@@ -138,7 +203,8 @@ function asErrors(value: unknown): ValidationError[] {
   return Array.isArray(value) ? (value as ValidationError[]) : [];
 }
 
-function displayValue(value: unknown) {
+function displayValue(value: unknown, money = false) {
+  if (money) return formatMoneyDisplay(value);
   if (value === null || value === undefined) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
@@ -166,178 +232,279 @@ function PreviewSkeleton() {
   );
 }
 
+function moneyFieldSet(role: SheetRole, mapping: Record<string, number>) {
+  const fields =
+    role === "LINE_ITEMS"
+      ? ["quantity", "unitPrice", "total"]
+      : role === "SUMMARY"
+        ? ["total"]
+        : [];
+  return new Set(
+    fields
+      .map((field) => mapping[field])
+      .filter((column): column is number => column !== undefined),
+  );
+}
+
 function SheetPreview({
-  organisationId,
-  importId,
+  workbook,
+  allMappings,
+  selectedSourceOrganisationId,
   sheet,
-  offset,
-  patches,
   discarded,
   disabled,
-  onOffset,
+  validationErrors,
+  isRecalculating,
   onPatch,
   onDiscard,
 }: {
-  organisationId: string;
-  importId: string;
+  workbook: ClientWorkbookData;
+  allMappings: Array<{
+    name: string;
+    role: SheetRole;
+    headerRow: number | null;
+    mapping: Record<string, number>;
+  }>;
+  selectedSourceOrganisationId: string;
   sheet: SheetMapping;
-  offset: number;
-  patches: CellPatch[];
   discarded: Set<number>;
   disabled: boolean;
-  onOffset: (offset: number) => void;
+  validationErrors: ValidationError[];
+  isRecalculating: boolean;
   onPatch: (patch: CellPatch) => void;
   onDiscard: (row: number) => void;
 }) {
-  const trpc = useTRPC();
-  const parentRef = useRef<HTMLDivElement>(null);
-  const { data } = useSuspenseQuery(
-    trpc.tradebookImport.previewSheet.queryOptions({
-      organisationId,
-      importId,
-      sheetName: sheet.name,
-      offset,
-      limit: 100,
-    }),
-  );
-  const virtualizer = useVirtualizer({
-    count: data.rows.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 42,
-    overscan: 8,
-  });
+  const sheetSnapshot = workbook.sheets.find((entry) => entry.name === sheet.name);
+  const rows = useMemo(() => {
+    if (!sheetSnapshot) return [];
+    return filterSheetRowsForOrganisation(
+      sheetSnapshot,
+      {
+        name: sheet.name,
+        role: sheet.role,
+        headerRow: sheet.headerRow,
+        mapping: sheet.mapping,
+      },
+      selectedSourceOrganisationId || undefined,
+      workbook.sheets,
+      allMappings,
+    );
+  }, [
+    allMappings,
+    selectedSourceOrganisationId,
+    sheet.headerRow,
+    sheet.mapping,
+    sheet.name,
+    sheet.role,
+    sheetSnapshot,
+    workbook.sheets,
+  ]);
+
   const columnCount = Math.max(
-    data.sheet.columnCount,
-    ...data.rows.map((row) => row.values.length),
+    sheetSnapshot?.columnCount ?? 0,
+    ...rows.map((row) => row.values.length),
+    1,
   );
   const columns = Array.from({ length: columnCount }, (_, index) => index + 1);
   const canDiscard = sheet.role === "SUMMARY" || sheet.role === "LINE_ITEMS";
   const headerRow = sheet.headerRow ?? 1;
-  const footerRows = new Set(data.sheet.footerRows);
+  const footerRows = new Set(sheetSnapshot?.footerRows ?? []);
+  const moneyColumns = moneyFieldSet(sheet.role, sheet.mapping);
+
+  const rowValidation = useMemo(() => {
+    const byRow = new Map<number, ValidationError[]>();
+    const byCell = new Map<string, ValidationError[]>();
+    for (const error of validationErrors) {
+      if (error.sheet !== sheet.name) continue;
+      byRow.set(error.row, [...(byRow.get(error.row) ?? []), error]);
+      byCell.set(
+        `${error.row}:${error.column}`,
+        [...(byCell.get(`${error.row}:${error.column}`) ?? []), error],
+      );
+    }
+    return { byRow, byCell };
+  }, [validationErrors, sheet.name]);
+
+  const lineItemMismatches = useMemo(() => {
+    if (sheet.role !== "LINE_ITEMS") return [];
+    const quantityColumn = sheet.mapping.quantity;
+    const unitPriceColumn = sheet.mapping.unitPrice;
+    const totalColumn = sheet.mapping.total;
+    if (
+      quantityColumn === undefined ||
+      unitPriceColumn === undefined ||
+      totalColumn === undefined
+    ) {
+      return [];
+    }
+    return rows
+      .filter((row) => !footerRows.has(row.rowNumber) && !discarded.has(row.rowNumber))
+      .filter((row) => {
+        const quantity = toRawScaled(row.values[quantityColumn]);
+        const unitPrice = toRawScaled(row.values[unitPriceColumn]);
+        const totalRaw = toRawScaled(row.values[totalColumn]);
+        if (quantity === null || unitPrice === null || totalRaw === null) {
+          return false;
+        }
+        const computed = multiplyToMoney(
+          row.values[quantityColumn],
+          row.values[unitPriceColumn],
+        );
+        const provided = truncateMoney(row.values[totalColumn]);
+        return computed !== null && provided !== null && computed !== provided;
+      })
+      .map((row) => row.rowNumber);
+  }, [discarded, footerRows, rows, sheet.mapping, sheet.role]);
+
+  if (!sheetSnapshot) {
+    return (
+      <p className="p-6 text-sm text-muted-foreground">
+        Sheet was not found in the workbook snapshot.
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-3">
+      {/* {lineItemMismatches.length > 0 ? (
+        <Alert className="mx-4 border-amber-300 bg-amber-50/70 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+          <AlertTriangleIcon aria-hidden="true" />
+          <AlertTitle>Total mismatch hints</AlertTitle>
+          <AlertDescription>
+            {lineItemMismatches.length} rows have `quantity x unit price`
+            different from total. Rows:{" "}
+            {lineItemMismatches.slice(0, 8).join(", ")}
+            {lineItemMismatches.length > 8 ? ", ..." : ""}.
+          </AlertDescription>
+        </Alert>
+      ) : null} */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4">
         <p className="text-xs text-muted-foreground">
-          Rows {offset + 1}–
-          {Math.min(offset + data.rows.length, data.sheet.rowCount)} of{" "}
-          {data.sheet.rowCount}
-          {data.sheet.footerRows.length > 0
-            ? ` · ${data.sheet.footerRows.length} footer row excluded`
+          {rows.length.toLocaleString()} rows loaded in browser
+          {sheetSnapshot.footerRows.length > 0
+            ? ` · ${sheetSnapshot.footerRows.length} footer row(s)`
             : ""}
         </p>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={offset === 0}
-            onClick={() => onOffset(Math.max(0, offset - 100))}
-          >
-            Previous rows
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={data.nextOffset === null}
-            onClick={() =>
-              data.nextOffset !== null && onOffset(data.nextOffset)
-            }
-          >
-            Next rows
-          </Button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {isRecalculating ? "Recalculating formulas..." : "Live workbook preview"}
+        </p>
       </div>
-      <section
-        ref={parentRef}
-        className="relative h-[32rem] overflow-auto border-y bg-muted/10"
-        aria-label={`${sheet.name} virtualized rows`}
-      >
-        <div
-          className="relative min-w-max"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const row = data.rows[virtualRow.index];
-            if (!row) return null;
-            const isHeader = row.rowNumber === headerRow;
-            const isFooter = footerRows.has(row.rowNumber);
-            const isDiscarded = discarded.has(row.rowNumber);
-            return (
-              <div
-                key={row.rowNumber}
-                className={cn(
-                  "absolute left-0 top-0 grid min-w-full border-b bg-card text-xs",
-                  isHeader && "sticky z-10 bg-muted font-semibold",
-                  isFooter &&
-                  "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
-                  isDiscarded && "bg-destructive/5 opacity-55 line-through",
-                )}
-                style={{
-                  width: "max-content",
-                  minWidth: "100%",
-                  gridTemplateColumns: `3.75rem repeat(${columnCount}, minmax(9rem, 1fr)) ${canDiscard ? "5rem" : ""}`,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <div className="sticky left-0 z-10 border-r bg-inherit px-2 py-2 font-mono text-muted-foreground">
-                  {row.rowNumber}
-                </div>
-                {columns.map((columnNumber) => {
-                  const columnIndex = columnNumber - 1;
-                  const patch = patches.find(
-                    (entry) =>
-                      entry.sheet === sheet.name &&
-                      entry.row === row.rowNumber &&
-                      entry.column === columnIndex + 1,
-                  );
-                  const value = patch?.value ?? row.values[columnIndex];
-                  return (
-                    <div key={columnNumber} className="border-r px-1 py-1">
-                      {isHeader || isFooter || disabled ? (
-                        <span
-                          className="block truncate px-1 py-1.5"
-                          title={displayValue(value)}
-                        >
-                          {displayValue(value) || "—"}
-                        </span>
-                      ) : (
-                        <Input
-                          aria-label={`${sheet.name} row ${row.rowNumber} column ${columnIndex + 1}`}
-                          className="h-7 min-w-32 border-transparent bg-transparent px-1.5 shadow-none focus-visible:bg-background"
-                          value={displayValue(value)}
-                          onChange={(event) =>
-                            onPatch({
-                              sheet: sheet.name,
-                              row: row.rowNumber,
-                              column: columnIndex + 1,
-                              value: event.target.value,
-                            })
-                          }
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                {canDiscard ? (
-                  <div className="flex items-center justify-center">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      disabled={disabled || isHeader || isFooter}
-                      aria-label={`${isDiscarded ? "Restore" : "Discard"} row ${row.rowNumber}`}
-                      onClick={() => onDiscard(row.rowNumber)}
-                    >
-                      <Trash2Icon aria-hidden="true" />
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
+      <section className="h-[32rem] overflow-auto border-y bg-muted/10">
+        <Table className="table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-16" />
+            {columns.map((columnNumber) => (
+              <col key={columnNumber} className="w-44" />
+            ))}
+            {canDiscard ? <col className="w-16" /> : null}
+          </colgroup>
+          <TableBody>
+            {rows.map((row) => {
+              const isHeader = row.rowNumber === headerRow;
+              const isFooter = footerRows.has(row.rowNumber);
+              const isDiscarded = discarded.has(row.rowNumber);
+              const rowIssues = rowValidation.byRow.get(row.rowNumber) ?? [];
+              return (
+                <TableRow
+                  key={row.rowNumber}
+                  className={cn(
+                    "bg-card align-top",
+                    isHeader && "bg-muted font-semibold",
+                    isFooter &&
+                    "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
+                    isDiscarded && "bg-destructive/5 opacity-55 line-through",
+                    rowIssues.length > 0 &&
+                    !isHeader &&
+                    !isFooter &&
+                    "bg-destructive/10",
+                  )}
+                >
+                  <TableCell
+                    className={cn(
+                      "sticky left-0 z-10 bg-inherit px-2 py-1.5 font-mono text-muted-foreground",
+                      rowIssues.length > 0 &&
+                      !isHeader &&
+                      !isFooter &&
+                      "text-destructive",
+                    )}
+                    title={
+                      rowIssues.length > 0
+                        ? rowIssues.map((issue) => issue.message).join("\n")
+                        : undefined
+                    }
+                  >
+                    {row.rowNumber}
+                    {rowIssues.length > 0 ? ` (${rowIssues.length})` : ""}
+                  </TableCell>
+                  {columns.map((columnNumber) => {
+                    const columnIndex = columnNumber - 1;
+                    const cellIssues =
+                      rowValidation.byCell.get(
+                        `${row.rowNumber}:${columnIndex + 1}`,
+                      ) ?? [];
+                    const value = row.values[columnIndex];
+                    const asMoney = moneyColumns.has(columnIndex);
+                    return (
+                      <TableCell
+                        key={columnNumber}
+                        className={cn(
+                          "px-1 py-1 align-top",
+                          cellIssues.length > 0 &&
+                          !isHeader &&
+                          !isFooter &&
+                          "bg-destructive/10",
+                        )}
+                        title={
+                          cellIssues.length > 0
+                            ? cellIssues.map((issue) => issue.message).join("\n")
+                            : undefined
+                        }
+                      >
+                        {isHeader || isFooter || disabled ? (
+                          <span
+                            className="block truncate px-1 py-1"
+                            title={displayValue(value, asMoney)}
+                          >
+                            {displayValue(value, asMoney) || "—"}
+                          </span>
+                        ) : (
+                          <Input
+                            aria-label={`${sheet.name} row ${row.rowNumber} column ${columnIndex + 1}`}
+                            aria-invalid={cellIssues.length > 0}
+                            className="h-7 w-full border-transparent bg-transparent px-1.5 shadow-none focus-visible:bg-background"
+                            value={displayValue(value, asMoney)}
+                            onChange={(event) =>
+                              onPatch({
+                                sheet: sheet.name,
+                                row: row.rowNumber,
+                                column: columnIndex + 1,
+                                value: event.target.value,
+                              })
+                            }
+                          />
+                        )}
+                      </TableCell>
+                    );
+                  })}
+                  {canDiscard ? (
+                    <TableCell className="py-1 text-center">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={disabled || isHeader || isFooter}
+                        aria-label={`${isDiscarded ? "Restore" : "Discard"} row ${row.rowNumber}`}
+                        onClick={() => onDiscard(row.rowNumber)}
+                      >
+                        <Trash2Icon aria-hidden="true" />
+                      </Button>
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </section>
     </div>
   );
@@ -365,7 +532,6 @@ export function TradebookReviewWorkspace({
   const [activeSheet, setActiveSheet] = useState(
     initialMapping.sheets[0]?.name ?? "",
   );
-  const [offset, setOffset] = useState(0);
   const [selectedSourceOrganisationId, setSelectedSourceOrganisationId] =
     useState(initialSourceOrganisationId);
   const [patches, setPatches] = useState<CellPatch[]>(data.review.patches);
@@ -378,11 +544,21 @@ export function TradebookReviewWorkspace({
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>(
     () => asErrors(data.validationErrors),
   );
+  const [hasValidatedMapping, setHasValidatedMapping] = useState(
+    data.status === "MAPPED" || asErrors(data.validationErrors).length > 0,
+  );
   const [readyToImport, setReadyToImport] = useState(data.status === "MAPPED");
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(
+    initialMapping.aiAssistance?.suggestions ?? [],
+  );
+  const [aiMappedRows, setAiMappedRows] = useState<string[]>([]);
   const [suggestionMessage, setSuggestionMessage] = useState<string | null>(
     null,
   );
+  const autoSuggestCompleted = Boolean(
+    initialMapping.aiAssistance?.autoRunCompleted,
+  );
+  const [aiRunRecorded, setAiRunRecorded] = useState(autoSuggestCompleted);
   const saveReview = useMutation(
     trpc.tradebookImport.saveReview.mutationOptions(),
   );
@@ -393,6 +569,93 @@ export function TradebookReviewWorkspace({
   const selectedSheet = sheets.find((sheet) => sheet.name === activeSheet);
   const imported = data.status === "IMPORTED" || commit.isSuccess;
   const failed = data.status === "FAILED";
+  const { data: workbookPayload, isPending: workbookPending } = useQuery({
+    ...trpc.tradebookImport.getWorkbookData.queryOptions({
+      organisationId,
+      importId,
+    }),
+    enabled: hasValidatedMapping && !failed && sheets.length > 0,
+  });
+  const baseWorkbook = useMemo<ClientWorkbookData | undefined>(() => {
+    if (!workbookPayload) return undefined;
+    return {
+      sheets: workbookPayload.sheets,
+      formulas: workbookPayload.formulas,
+    };
+  }, [workbookPayload]);
+  const previewMappings = useMemo(
+    () =>
+      sheets.map((sheet) => ({
+        name: sheet.name,
+        role: sheet.role,
+        headerRow: sheet.headerRow,
+        mapping: sheet.mapping,
+      })),
+    [sheets],
+  );
+  const { liveData, isRecalculating } = useLiveWorkbookPreview({
+    baseData: baseWorkbook,
+    patches,
+    mappings: previewMappings,
+    discardedContractRows,
+    discardedLineItemRows,
+    enabled: hasValidatedMapping && Boolean(baseWorkbook),
+  });
+  const suggestionLookup = useMemo(
+    () =>
+      new Map(
+        suggestions.map((suggestion) => [
+          `${suggestion.sheetName}:${suggestion.field}`,
+          suggestion,
+        ]),
+      ),
+    [suggestions],
+  );
+  const mappingRows = useMemo<MappingRow[]>(() => {
+    return sheets.flatMap((sheet) =>
+      fieldsByRole[sheet.role].map((field) => {
+        const key = `${sheet.name}:${field}`;
+        const missing =
+          requiredFieldsByRole[sheet.role].includes(field) &&
+          sheet.mapping[field] === undefined;
+        const aiSuggestion = suggestionLookup.get(key);
+        const matchType = sheet.headerMatches?.[field]?.matchType;
+        const inlineError = missing
+          ? "Required field is not mapped."
+          : matchType === "FUZZY_ALIAS"
+            ? "Header matched fuzzily. Verify this mapping."
+            : null;
+        return {
+          key,
+          sheetName: sheet.name,
+          role: sheet.role,
+          field,
+          mappingColumn: sheet.mapping[field],
+          missing,
+          aiSuggestion,
+          aiSuggested: aiMappedRows.includes(key) || Boolean(aiSuggestion),
+          inlineError,
+        };
+      }),
+    );
+  }, [sheets, suggestionLookup, aiMappedRows]);
+  const needsAutoSuggestion = useMemo(
+    () =>
+      sheets.some((sheet) => {
+        if (sheet.role === "OTHER") return false;
+        if (
+          requiredFieldsByRole[sheet.role].some(
+            (field) => sheet.mapping[field] === undefined,
+          )
+        ) {
+          return true;
+        }
+        return requiredFieldsByRole[sheet.role].some(
+          (field) => sheet.headerMatches?.[field]?.matchType === "FUZZY_ALIAS",
+        );
+      }),
+    [sheets],
+  );
 
   useOrganisationEvents({
     organisationId,
@@ -409,6 +672,26 @@ export function TradebookReviewWorkspace({
       ]);
     },
   });
+
+  useEffect(() => {
+    if (initialMapping.sheets.length === 0) return;
+    if (sheets.length > 0) return;
+
+    setSheets(initialMapping.sheets);
+    setActiveSheet((current) => current || initialMapping.sheets[0]?.name || "");
+    setSuggestions(initialMapping.aiAssistance?.suggestions ?? []);
+    setAiRunRecorded(Boolean(initialMapping.aiAssistance?.autoRunCompleted));
+    if (!selectedSourceOrganisationId) {
+      setSelectedSourceOrganisationId(initialSourceOrganisationId);
+    }
+  }, [
+    initialMapping.aiAssistance?.autoRunCompleted,
+    initialMapping.aiAssistance?.suggestions,
+    initialMapping.sheets,
+    initialSourceOrganisationId,
+    selectedSourceOrganisationId,
+    sheets.length,
+  ]);
 
   function updatePatch(next: CellPatch) {
     setReadyToImport(false);
@@ -433,7 +716,12 @@ export function TradebookReviewWorkspace({
     if (role === "LINE_ITEMS") setDiscardedLineItemRows(update);
   }
 
-  async function handleSuggest() {
+  const handleSuggest = useCallback(async (automatic = false) => {
+    const runningToastId = automatic
+      ? toast.loading(
+        "Running AI mapping because some headers did not match exactly...",
+      )
+      : null;
     try {
       const result = await suggestMapping.mutateAsync({
         organisationId,
@@ -441,22 +729,40 @@ export function TradebookReviewWorkspace({
       });
       if (!result.available) {
         setSuggestionMessage(result.reason);
+        if (runningToastId !== null) {
+          toast.error(result.reason, { id: runningToastId });
+        }
         return;
       }
       setSuggestions(result.suggestions);
+      setAiRunRecorded(true);
       setSuggestionMessage(
         result.suggestions.length === 0
           ? "Deterministic mapping already covered every required field."
-          : "Review each suggestion before applying it.",
+          : automatic
+            ? "AI suggestions were generated automatically. Review each row before applying."
+            : "Review each suggestion before applying it.",
       );
+      if (runningToastId !== null) {
+        toast.success(
+          result.suggestions.length === 0
+            ? "AI mapping completed. No additional suggestions were required."
+            : `AI mapping completed with ${result.suggestions.length} suggestion(s).`,
+          { id: runningToastId },
+        );
+      }
     } catch (error) {
+      if (runningToastId !== null) {
+        toast.error("AI mapping failed.", { id: runningToastId });
+      }
       toast.error(
         error instanceof Error ? error.message : "Mapping suggestions failed",
       );
     }
-  }
+  }, [importId, organisationId, suggestMapping]);
 
   function applySuggestion(suggestion: Suggestion) {
+    const suggestionKey = `${suggestion.sheetName}:${suggestion.field}`;
     setSheets((current) =>
       current.map((sheet) =>
         sheet.name === suggestion.sheetName
@@ -473,8 +779,17 @@ export function TradebookReviewWorkspace({
           : sheet,
       ),
     );
+    setAiMappedRows((current) =>
+      current.includes(suggestionKey) ? current : [...current, suggestionKey],
+    );
     setSuggestions((current) =>
-      current.filter((entry) => entry !== suggestion),
+      current.filter(
+        (entry) =>
+          !(
+            entry.sheetName === suggestion.sheetName &&
+            entry.field === suggestion.field
+          ),
+      ),
     );
     setReadyToImport(false);
   }
@@ -494,8 +809,15 @@ export function TradebookReviewWorkspace({
       });
       setValidationErrors(result.validationErrors);
       setReadyToImport(result.readyToImport);
+      setHasValidatedMapping(true);
       await queryClient.invalidateQueries(
         trpc.tradebookImport.get.queryFilter({ organisationId, importId }),
+      );
+      await queryClient.invalidateQueries(
+        trpc.tradebookImport.getWorkbookData.queryFilter({
+          organisationId,
+          importId,
+        }),
       );
       toast[result.readyToImport ? "success" : "error"](
         result.readyToImport
@@ -508,6 +830,23 @@ export function TradebookReviewWorkspace({
       );
     }
   }
+
+  useEffect(() => {
+    if (failed || suggestMapping.isPending || autoSuggestCompleted || aiRunRecorded) {
+      return;
+    }
+    if (suggestions.length > 0) return;
+    if (!needsAutoSuggestion) return;
+    void handleSuggest(true);
+  }, [
+    aiRunRecorded,
+    autoSuggestCompleted,
+    failed,
+    handleSuggest,
+    needsAutoSuggestion,
+    suggestions.length,
+    suggestMapping.isPending,
+  ]);
 
   async function handleCommit() {
     try {
@@ -557,6 +896,7 @@ export function TradebookReviewWorkspace({
           <CardContent className="flex flex-wrap gap-2">
             <Button
               variant="outline"
+              nativeButton={false}
               render={
                 <Link href={`/api/org/${organisationId}/export?format=excel`} />
               }
@@ -565,23 +905,29 @@ export function TradebookReviewWorkspace({
             </Button>
             <Button
               variant="outline"
+              nativeButton={false}
               render={
                 <Link href={`/api/org/${organisationId}/export?format=json`} />
               }
             >
               Export JSON
             </Button>
-            <Button render={<Link href={`/org/${organisationId}/contracts`} />}>
+            <Button
+              nativeButton={false}
+              render={<Link href={`/org/${organisationId}/contracts`} />}
+            >
               View contracts
             </Button>
             <Button
               variant="outline"
+              nativeButton={false}
               render={<Link href={`/org/${organisationId}/line-items`} />}
             >
               View line items
             </Button>
             <Button
               variant="outline"
+              nativeButton={false}
               render={<Link href={`/org/${organisationId}/audit-trail`} />}
             >
               View audit trail
@@ -594,11 +940,12 @@ export function TradebookReviewWorkspace({
 
   return (
     <section aria-labelledby="review-title" className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div>
         <div>
           <Button
             variant="link"
             className="-ml-2 px-2 text-muted-foreground"
+            nativeButton={false}
             render={<Link href={`/org/${organisationId}/imports`} />}
           >
             <ArrowLeftIcon aria-hidden="true" /> Import history
@@ -617,25 +964,6 @@ export function TradebookReviewWorkspace({
             {(data.fileSizeBytes ?? 0).toLocaleString()} bytes
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={handleSave}
-            disabled={
-              failed || saveReview.isPending || !selectedSourceOrganisationId
-            }
-          >
-            <SaveIcon aria-hidden="true" />
-            {saveReview.isPending ? "Validating..." : "Save and validate"}
-          </Button>
-          <Button
-            onClick={handleCommit}
-            disabled={!readyToImport || commit.isPending}
-          >
-            <FileCheck2Icon aria-hidden="true" />
-            {commit.isPending ? "Importing..." : "Commit import"}
-          </Button>
-        </div>
       </div>
 
       {failed ? (
@@ -648,14 +976,268 @@ export function TradebookReviewWorkspace({
           </AlertDescription>
         </Alert>
       ) : null}
+      {!failed && sheets.length === 0 ? (
+        <Alert>
+          <SparklesIcon aria-hidden="true" />
+          <AlertTitle>Workbook is preparing</AlertTitle>
+          <AlertDescription>
+            Parsing is running in the background. Mappings and preview appear
+            automatically once ready.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Import partition + Sheet mappings</CardTitle>
+            <CardDescription>
+              Pick one workbook organisation and map fields in a single grid.
+              Row errors appear inline.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <NativeSelect
+              aria-label="Workbook organisation"
+              value={selectedSourceOrganisationId}
+              disabled={failed}
+              onChange={(event) => {
+                setSelectedSourceOrganisationId(event.target.value);
+                setReadyToImport(false);
+              }}
+            >
+              <NativeSelectOption value="">
+                Select source organisation
+              </NativeSelectOption>
+              {initialMapping.sourceOrganisations.map((source) => (
+                <NativeSelectOption key={source.id} value={source.id}>
+                  {source.id} · {source.contractCount} contracts ·{" "}
+                  {source.lineItemCount} lines
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <div className="max-h-[28rem] overflow-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sheet</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Header row</TableHead>
+                    <TableHead>Field</TableHead>
+                    <TableHead>Mapped column</TableHead>
+                    <TableHead>AI</TableHead>
+                    <TableHead>Error</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mappingRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-muted-foreground">
+                        Workbook is still preparing. Mapping rows appear once
+                        parsing finishes.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    mappingRows.map((row) => {
+                      const sheet = sheets.find(
+                        (entry) => entry.name === row.sheetName,
+                      );
+                      if (!sheet) return null;
+                      return (
+                        <TableRow
+                          key={row.key}
+                          className={cn(
+                            row.aiSuggested &&
+                            "bg-amber-50/80 dark:bg-amber-950/20",
+                          )}
+                        >
+                          <TableCell className="font-medium">
+                            {row.sheetName}
+                          </TableCell>
+                          <TableCell>
+                            <NativeSelect
+                              aria-label={`${row.sheetName} role`}
+                              value={sheet.role}
+                              disabled={failed}
+                              onChange={(event) => {
+                                const role = event.target.value as SheetRole;
+                                setSheets((current) =>
+                                  current.map((entry) =>
+                                    entry.name === row.sheetName
+                                      ? { ...entry, role, mapping: {} }
+                                      : entry,
+                                  ),
+                                );
+                                setReadyToImport(false);
+                              }}
+                            >
+                              {(Object.keys(roleLabels) as SheetRole[]).map(
+                                (role) => (
+                                  <NativeSelectOption key={role} value={role}>
+                                    {roleLabels[role]}
+                                  </NativeSelectOption>
+                                ),
+                              )}
+                            </NativeSelect>
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={1}
+                              aria-label={`${row.sheetName} header row`}
+                              value={sheet.headerRow ?? ""}
+                              disabled={failed}
+                              className="h-8"
+                              onChange={(event) => {
+                                const headerRow = Number(event.target.value);
+                                setSheets((current) =>
+                                  current.map((entry) =>
+                                    entry.name === row.sheetName
+                                      ? {
+                                        ...entry,
+                                        headerRow:
+                                          Number.isInteger(headerRow) &&
+                                            headerRow > 0
+                                            ? headerRow
+                                            : null,
+                                      }
+                                      : entry,
+                                  ),
+                                );
+                                setReadyToImport(false);
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {row.field}
+                          </TableCell>
+                          <TableCell>
+                            <NativeSelect
+                              aria-label={`${row.sheetName} ${row.field} column`}
+                              value={
+                                row.mappingColumn === undefined
+                                  ? ""
+                                  : String(row.mappingColumn)
+                              }
+                              disabled={failed}
+                              onChange={(event) => {
+                                const nextMapping = { ...sheet.mapping };
+                                if (event.target.value === "") {
+                                  delete nextMapping[row.field];
+                                } else {
+                                  nextMapping[row.field] = Number(
+                                    event.target.value,
+                                  );
+                                }
+                                setSheets((current) =>
+                                  current.map((entry) =>
+                                    entry.name === row.sheetName
+                                      ? { ...entry, mapping: nextMapping }
+                                      : entry,
+                                  ),
+                                );
+                                setReadyToImport(false);
+                              }}
+                            >
+                              <NativeSelectOption value="">
+                                Not mapped
+                              </NativeSelectOption>
+                              {headerOptions(sheet.headers).map((option) => (
+                                <NativeSelectOption
+                                  key={option.id}
+                                  value={String(option.column)}
+                                >
+                                  {option.column + 1}.{" "}
+                                  {option.header || "Untitled"}
+                                </NativeSelectOption>
+                              ))}
+                            </NativeSelect>
+                          </TableCell>
+                          <TableCell>
+                            {row.aiSuggestion ? (
+                              <div className="space-y-1">
+                                <Badge variant="outline">
+                                  {Math.round(row.aiSuggestion.confidence * 100)}
+                                  %
+                                </Badge>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="xs"
+                                  onClick={() => {
+                                    if (row.aiSuggestion) {
+                                      applySuggestion(row.aiSuggestion);
+                                    }
+                                  }}
+                                >
+                                  <LightbulbIcon
+                                    aria-hidden="true"
+                                    className="size-3"
+                                  />
+                                  Apply
+                                </Button>
+                              </div>
+                            ) : row.aiSuggested ? (
+                              <Badge variant="outline">AI mapped</Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-xs",
+                              row.inlineError
+                                ? "text-destructive"
+                                : "text-muted-foreground",
+                            )}
+                          >
+                            {row.inlineError ?? "OK"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={suggestMapping.isPending || failed}
+              onClick={() => void handleSuggest()}
+            >
+              <SparklesIcon aria-hidden="true" />
+              {suggestMapping.isPending
+                ? "Requesting suggestions..."
+                : "Suggest missing mappings"}
+            </Button>
+            {suggestionMessage ? (
+              <p className="text-xs text-muted-foreground">{suggestionMessage}</p>
+            ) : null}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleSave}
+              disabled={
+                failed || saveReview.isPending || !selectedSourceOrganisationId
+              }
+            >
+              <SaveIcon aria-hidden="true" />
+              {saveReview.isPending ? "Validating..." : "Save and validate"}
+            </Button>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="border-b">
             <CardTitle>Sheet preview</CardTitle>
             <CardDescription>
-              Edit source cells in place. Formula text remains preserved in the
-              import snapshot.
+              All rows load once in the browser. Edits and discards
+              recalculate line totals, summary totals, and dashboard formulas
+              live with 2-decimal truncation.
             </CardDescription>
             <div
               className="mt-3 flex gap-1 overflow-x-auto pb-1"
@@ -672,7 +1254,6 @@ export function TradebookReviewWorkspace({
                   aria-selected={activeSheet === sheet.name}
                   onClick={() => {
                     setActiveSheet(sheet.name);
-                    setOffset(0);
                   }}
                 >
                   {sheet.name}
@@ -684,14 +1265,19 @@ export function TradebookReviewWorkspace({
             </div>
           </CardHeader>
           <CardContent className="px-0">
-            {selectedSheet ? (
+            {!hasValidatedMapping ? (
+              <div className="p-6 text-sm text-muted-foreground">
+                Validate mappings to unlock the Excel sheet preview.
+              </div>
+            ) : workbookPending || !liveData ? (
+              <PreviewSkeleton />
+            ) : selectedSheet ? (
               <Suspense fallback={<PreviewSkeleton />}>
                 <SheetPreview
-                  organisationId={organisationId}
-                  importId={importId}
+                  workbook={liveData}
+                  allMappings={previewMappings}
+                  selectedSourceOrganisationId={selectedSourceOrganisationId}
                   sheet={selectedSheet}
-                  offset={offset}
-                  patches={patches}
                   discarded={
                     new Set(
                       selectedSheet.role === "SUMMARY"
@@ -700,7 +1286,8 @@ export function TradebookReviewWorkspace({
                     )
                   }
                   disabled={failed}
-                  onOffset={setOffset}
+                  validationErrors={validationErrors}
+                  isRecalculating={isRecalculating}
                   onPatch={updatePatch}
                   onDiscard={(row) => toggleDiscard(selectedSheet.role, row)}
                 />
@@ -713,251 +1300,38 @@ export function TradebookReviewWorkspace({
           </CardContent>
         </Card>
 
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Import partition</CardTitle>
-              <CardDescription>
-                Only one workbook organisation is persisted into this app
-                organisation.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <NativeSelect
-                aria-label="Workbook organisation"
-                value={selectedSourceOrganisationId}
-                disabled={failed}
-                onChange={(event) => {
-                  setSelectedSourceOrganisationId(event.target.value);
-                  setReadyToImport(false);
-                }}
-              >
-                <NativeSelectOption value="">
-                  Select source organisation
-                </NativeSelectOption>
-                {initialMapping.sourceOrganisations.map((source) => (
-                  <NativeSelectOption key={source.id} value={source.id}>
-                    {source.id} · {source.contractCount} contracts ·{" "}
-                    {source.lineItemCount} lines
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Sheet mappings</CardTitle>
-              <CardDescription>
-                Deterministic aliases run first. AI only suggests missing
-                fields.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {sheets.map((sheet) => (
-                <div key={sheet.name} className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-medium">{sheet.name}</p>
-                    <Badge variant="outline">{roleLabels[sheet.role]}</Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Header row {sheet.headerRow ?? "not detected"} ·{" "}
-                    {Object.keys(sheet.mapping).length} mapped fields
-                  </p>
-                  {sheet.missingRequired.length > 0 ? (
-                    <p className="mt-2 text-xs text-destructive">
-                      Missing: {sheet.missingRequired.join(", ")}
-                    </p>
-                  ) : null}
-                  <div className="mt-3 space-y-2 border-t pt-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Manual column mapping
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <NativeSelect
-                        aria-label={`${sheet.name} sheet role`}
-                        value={sheet.role}
-                        disabled={failed}
-                        onChange={(event) => {
-                          const role = event.target.value as SheetRole;
-                          setSheets((current) =>
-                            current.map((entry) =>
-                              entry.name === sheet.name
-                                ? { ...entry, role, mapping: {} }
-                                : entry,
-                            ),
-                          );
-                          setReadyToImport(false);
-                        }}
-                      >
-                        {(Object.keys(roleLabels) as SheetRole[]).map(
-                          (role) => (
-                            <NativeSelectOption key={role} value={role}>
-                              {roleLabels[role]}
-                            </NativeSelectOption>
-                          ),
-                        )}
-                      </NativeSelect>
-                      <Input
-                        type="number"
-                        min={1}
-                        aria-label={`${sheet.name} header row`}
-                        value={sheet.headerRow ?? ""}
-                        disabled={failed}
-                        placeholder="Header row"
-                        onChange={(event) => {
-                          const headerRow = Number(event.target.value);
-                          setSheets((current) =>
-                            current.map((entry) =>
-                              entry.name === sheet.name
-                                ? {
-                                  ...entry,
-                                  headerRow:
-                                    Number.isInteger(headerRow) &&
-                                      headerRow > 0
-                                      ? headerRow
-                                      : null,
-                                }
-                                : entry,
-                            ),
-                          );
-                          setReadyToImport(false);
-                        }}
-                      />
-                    </div>
-                    {fieldsByRole[sheet.role].map((field) => (
-                      <div
-                        key={field}
-                        className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-2 text-xs"
-                      >
-                        <span className="truncate font-mono" title={field}>
-                          {field}
-                        </span>
-                        <NativeSelect
-                          aria-label={`${sheet.name} ${field} column`}
-                          value={
-                            sheet.mapping[field] === undefined
-                              ? ""
-                              : String(sheet.mapping[field])
-                          }
-                          disabled={failed}
-                          onChange={(event) => {
-                            const nextMapping = { ...sheet.mapping };
-                            if (event.target.value === "") {
-                              delete nextMapping[field];
-                            } else {
-                              nextMapping[field] = Number(event.target.value);
-                            }
-                            setSheets((current) =>
-                              current.map((entry) =>
-                                entry.name === sheet.name
-                                  ? { ...entry, mapping: nextMapping }
-                                  : entry,
-                              ),
-                            );
-                            setReadyToImport(false);
-                          }}
-                        >
-                          <NativeSelectOption value="">
-                            Not mapped
-                          </NativeSelectOption>
-                          {headerOptions(sheet.headers).map((option) => (
-                            <NativeSelectOption
-                              key={option.id}
-                              value={String(option.column)}
-                            >
-                              {option.column + 1}. {option.header || "Untitled"}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                disabled={suggestMapping.isPending || failed}
-                onClick={handleSuggest}
-              >
-                <SparklesIcon aria-hidden="true" />
-                {suggestMapping.isPending
-                  ? "Requesting suggestions..."
-                  : "Suggest missing mappings"}
-              </Button>
-              {suggestionMessage ? (
-                <p className="text-xs text-muted-foreground">
-                  {suggestionMessage}
-                </p>
-              ) : null}
-              {suggestions.map((suggestion) => (
-                <div
-                  key={`${suggestion.sheetName}-${suggestion.field}`}
-                  className="rounded-lg border border-dashed p-3"
-                >
-                  <p className="flex items-center gap-1.5 font-medium">
-                    <LightbulbIcon aria-hidden="true" className="size-3.5" />
-                    {suggestion.field}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {suggestion.sheetName}, column {suggestion.columnIndex + 1}{" "}
-                    · {Math.round(suggestion.confidence * 100)}%
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {suggestion.rationale}
-                  </p>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="secondary"
-                    className="mt-2"
-                    onClick={() => applySuggestion(suggestion)}
-                  >
-                    Apply suggestion
-                  </Button>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
+        <Card>
+          <CardHeader className="flex-row items-start justify-between gap-3">
+            <div className="space-y-1">
               <CardTitle>Validation</CardTitle>
               <CardDescription>
                 {validationErrors.length === 0
                   ? "No blocking issues in the saved review."
                   : `${validationErrors.length} blocking issues require edits or discards.`}
               </CardDescription>
-            </CardHeader>
-            <CardContent className="max-h-72 space-y-2 overflow-auto">
-              {validationErrors.length === 0 ? (
-                <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
-                  <CheckCircle2Icon aria-hidden="true" className="size-4" />{" "}
-                  Ready after validation
-                </div>
-              ) : (
-                validationErrors.slice(0, 100).map((error) => (
-                  <button
-                    key={`${error.sheet}-${error.row}-${error.column}-${error.field}-${error.code}`}
-                    type="button"
-                    className="block w-full rounded-lg border p-2 text-left text-xs hover:bg-muted"
-                    onClick={() => {
-                      setActiveSheet(error.sheet);
-                      setOffset(Math.floor((error.row - 1) / 100) * 100);
-                    }}
-                  >
-                    <span className="font-mono text-destructive">
-                      {error.sheet}!R{error.row}C{error.column}
-                    </span>
-                    <span className="mt-1 block">{error.message}</span>
-                  </button>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+            <Button
+              onClick={handleCommit}
+              disabled={!readyToImport || commit.isPending}
+            >
+              <FileCheck2Icon aria-hidden="true" />
+              {commit.isPending ? "Importing..." : "Commit import"}
+            </Button>
+          </CardHeader>
+          <CardContent className="max-h-72 space-y-2 overflow-auto">
+            {validationErrors.length === 0 ? (
+              <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2Icon aria-hidden="true" className="size-4" />{" "}
+                Ready after validation
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                Validation issues are now shown directly on sheet rows and cells.
+                Rows with issues are tinted red and show issue counts.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </section>
   );

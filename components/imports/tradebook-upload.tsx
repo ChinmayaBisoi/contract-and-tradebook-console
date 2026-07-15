@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileSpreadsheetIcon, LockKeyholeIcon, UploadIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,17 @@ import { useTRPC } from "@/trpc/client";
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const MAX_BYTES = 32 * 1024 * 1024;
+
+type PreflightStatus = "idle" | "running" | "complete" | "error";
+
+type PreflightSummary = {
+  sheets: Array<{ name: string; rowCount: number; columnCount: number }>;
+  formulaCount: number;
+};
+
+type WorkerResponse =
+  | { type: "complete"; summary: PreflightSummary }
+  | { type: "error"; message: string };
 
 function messageFrom(error: unknown) {
   return error instanceof Error
@@ -46,6 +57,11 @@ export function TradebookUpload({
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [preflightStatus, setPreflightStatus] = useState<PreflightStatus>("idle");
+  const [preflightSummary, setPreflightSummary] = useState<PreflightSummary | null>(
+    null,
+  );
+  const workerRef = useRef<Worker | null>(null);
   const createUpload = useMutation(
     trpc.tradebookImport.createUpload.mutationOptions(),
   );
@@ -57,6 +73,81 @@ export function TradebookUpload({
     onUploadProgress: setProgress,
   });
   const pending = createUpload.isPending || isUploading || prepare.isPending;
+
+  useEffect(() => {
+    return () => {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    };
+  }, []);
+
+  async function runPreflight(nextFile: File) {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setPreflightStatus("running");
+    setPreflightSummary(null);
+    try {
+      const buffer = await nextFile.arrayBuffer();
+      const worker = new Worker(
+        new URL("./tradebook-preflight.worker.ts", import.meta.url),
+      );
+      workerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
+        const message = event.data;
+        if (message.type === "complete") {
+          setPreflightSummary(message.summary);
+          setPreflightStatus("complete");
+        } else {
+          setPreflightStatus("error");
+          setError(message.message);
+        }
+        worker.terminate();
+        if (workerRef.current === worker) {
+          workerRef.current = null;
+        }
+      };
+      worker.onerror = () => {
+        setPreflightStatus("error");
+        setError("Workbook preview parse failed. You can still upload.");
+        worker.terminate();
+        if (workerRef.current === worker) {
+          workerRef.current = null;
+        }
+      };
+      worker.postMessage(buffer, [buffer]);
+    } catch (workerError) {
+      setPreflightStatus("error");
+      setError(
+        workerError instanceof Error
+          ? workerError.message
+          : "Workbook preview parse failed. You can still upload.",
+      );
+    }
+  }
+
+  function prepareInBackground(uploadId: string) {
+    void (async () => {
+      const parsingToastId = toast.loading("Parsing workbook...");
+      try {
+        await prepare.mutateAsync({ organisationId, importId: uploadId });
+        await queryClient.invalidateQueries(
+          trpc.tradebookImport.list.queryFilter({ organisationId }),
+        );
+        toast.success("Workbook prepared for review", {
+          id: parsingToastId,
+        });
+      } catch (error) {
+        const message = messageFrom(error);
+        await markUploadFailed
+          .mutateAsync({ organisationId, uploadId, message })
+          .catch(() => undefined);
+        await queryClient.invalidateQueries(
+          trpc.tradebookImport.list.queryFilter({ organisationId }),
+        );
+        toast.error(message, { id: parsingToastId });
+      }
+    })();
+  }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -78,12 +169,8 @@ export function TradebookUpload({
         throw new Error(uploadConfirmationError(uploaded));
       }
       setProgress(100);
-      await prepare.mutateAsync({ organisationId, importId: uploadId });
-      await queryClient.invalidateQueries(
-        trpc.tradebookImport.list.queryFilter({ organisationId }),
-      );
-      toast.success("Workbook prepared for review");
       router.push(`/org/${organisationId}/imports/${uploadId}`);
+      prepareInBackground(uploadId);
     } catch (uploadError) {
       const message = messageFrom(uploadError);
       setError(message);
@@ -133,6 +220,8 @@ export function TradebookUpload({
             onChange={(event) => {
               const next = event.target.files?.[0] ?? null;
               setError(null);
+              setPreflightSummary(null);
+              setPreflightStatus("idle");
               if (
                 next &&
                 (next.size > MAX_BYTES ||
@@ -143,6 +232,9 @@ export function TradebookUpload({
                 return;
               }
               setFile(next);
+              if (next) {
+                void runPreflight(next);
+              }
             }}
           />
           <Button type="submit" disabled={!file || pending}>
@@ -171,6 +263,17 @@ export function TradebookUpload({
           {error ? (
             <p role="alert" className="text-sm text-destructive md:col-span-2">
               {error} Select the file again to retry.
+            </p>
+          ) : null}
+          {file ? (
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              {preflightStatus === "running"
+                ? "Parsing workbook in background worker..."
+                : preflightStatus === "complete"
+                  ? `${preflightSummary?.sheets.length ?? 0} sheets detected · ${preflightSummary?.formulaCount ?? 0} formulas`
+                  : preflightStatus === "error"
+                    ? "Preflight parsing failed. Upload can still continue."
+                    : "Workbook ready for preflight parse."}
             </p>
           ) : null}
         </form>

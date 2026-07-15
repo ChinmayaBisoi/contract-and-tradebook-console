@@ -9,6 +9,7 @@ import {
 import {
   analyzeWorkbookMapping,
   buildAiMappingRequest,
+  type MappingSuggestion,
   suggestMappingsWithAi,
   type WorkbookMappingAnalysis,
 } from "@/lib/tradebook/mapping";
@@ -17,6 +18,9 @@ import {
   type ParsedWorkbook,
   parseWorkbookBuffer,
 } from "@/lib/tradebook/parser";
+import {
+  persistEditedWorkbookArtifact,
+} from "@/lib/tradebook/edited-workbook";
 import { persistReviewedDraft } from "@/lib/tradebook/persistence";
 import { getWorkbookReadUrl } from "@/lib/tradebook/uploadthing";
 import { buildImportDraft, type CellPatch } from "@/lib/tradebook/validation";
@@ -616,14 +620,8 @@ export const tradebookImportRouter = createTRPCRouter({
     };
   }),
 
-  previewSheet: protectedProcedure
-    .input(
-      importInput.extend({
-        sheetName: z.string().min(1),
-        offset: z.number().int().nonnegative().default(0),
-        limit: z.number().int().min(1).max(100).default(50),
-      }),
-    )
+  getWorkbookData: protectedProcedure
+    .input(importInput)
     .query(async ({ ctx, input }) => {
       const db = ctx.db as unknown as TradebookImportDb;
       await requireImportPermission(
@@ -634,40 +632,29 @@ export const tradebookImportRouter = createTRPCRouter({
       );
       const record = await ownedImport(db, input);
       const parsed = parsedWorkbook(record);
-      const sheet = parsed.workbookSnapshot.sheets.find(
-        (entry) => entry.name === input.sheetName,
-      );
-      if (!sheet) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Sheet was not found.",
-        });
-      }
-      const rows = sheet.rows.map((row) => [...row]);
-      for (const patch of reviewState(record).patches) {
-        const row = rows[patch.row - 1];
-        if (patch.sheet === sheet.name && row) {
-          row[patch.column - 1] = patch.value;
-        }
-      }
+      const mapping = record.mappingConfig as WorkbookMappingAnalysis | null;
       return {
-        sheet: {
-          name: sheet.name,
-          rowCount: sheet.rowCount,
-          columnCount: sheet.columnCount,
-          footerRows: sheet.footerRows,
-        },
-        rows: rows
-          .slice(input.offset, input.offset + input.limit)
-          .map((row, index) => ({
-            rowNumber: input.offset + index + 1,
-            values: row,
-          })),
-        nextOffset:
-          input.offset + input.limit < rows.length
-            ? input.offset + input.limit
-            : null,
+        sheets: parsed.workbookSnapshot.sheets,
+        formulas: parsed.formulaSnapshot.cells,
+        editedWorkbook: mapping?.editedWorkbook ?? null,
       };
+    }),
+
+  previewSheet: protectedProcedure
+    .input(
+      importInput.extend({
+        sheetName: z.string().min(1),
+        selectedSourceOrganisationId: z.string().min(1).optional(),
+        offset: z.number().int().nonnegative().default(0),
+        limit: z.number().int().min(1).max(100).default(50),
+      }),
+    )
+    .query(async () => {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Sheet preview is browser-owned. Use getWorkbookData and recalculate client-side.",
+      });
     }),
 
   suggestMapping: protectedProcedure
@@ -683,10 +670,26 @@ export const tradebookImportRouter = createTRPCRouter({
       const record = await ownedImport(db, input, ctx.auth.clerkUserId);
       const parsed = parsedWorkbook(record);
       const mapping = mappingAnalysis(record);
-      return suggestMappingsWithAi({
+      const result = await suggestMappingsWithAi({
         apiKey: process.env.OPENAI_API_KEY,
         request: buildAiMappingRequest(parsed.workbookSnapshot, mapping),
       });
+      if (result.available) {
+        await db.tradebookImport.update({
+          where: { id: record.id },
+          data: {
+            mappingConfig: {
+              ...mapping,
+              aiAssistance: {
+                autoRunCompleted: true,
+                suggestions: result.suggestions as MappingSuggestion[],
+                lastRunAt: new Date().toISOString(),
+              },
+            } satisfies WorkbookMappingAnalysis,
+          },
+        });
+      }
+      return result;
     }),
 
   saveReview: protectedProcedure
@@ -723,6 +726,9 @@ export const tradebookImportRouter = createTRPCRouter({
           headers:
             detected.sheets.find((entry) => entry.name === sheet.name)
               ?.headers ?? [],
+          headerMatches:
+            detected.sheets.find((entry) => entry.name === sheet.name)
+              ?.headerMatches ?? {},
           missingRequired: [],
         })),
         requiresAssistance: false,
@@ -750,11 +756,34 @@ export const tradebookImportRouter = createTRPCRouter({
         discardedLineItemRows: input.discardedLineItemRows,
         existingPoRefs: new Set(existing.map((contract) => contract.poRefNo)),
       });
+      const editedWorkbook =
+        record.upload.storageKey
+          ? await persistEditedWorkbookArtifact({
+              storageKey: record.upload.storageKey,
+              blobUrl: record.upload.blobUrl,
+              fileName: record.upload.fileName,
+              parsed,
+              patches: input.patches,
+              discardedContractRows: input.discardedContractRows,
+              discardedLineItemRows: input.discardedLineItemRows,
+              sheetNamesByRole: {
+                summary: confirmed.sheets.find(
+                  (sheet) => sheet.role === "SUMMARY",
+                )?.name,
+                lineItems: confirmed.sheets.find(
+                  (sheet) => sheet.role === "LINE_ITEMS",
+                )?.name,
+              },
+            })
+          : null;
       await db.tradebookImport.update({
         where: { id: record.id },
         data: {
           selectedSourceOrganisationId: input.selectedSourceOrganisationId,
-          mappingConfig: confirmed,
+          mappingConfig: {
+            ...confirmed,
+            editedWorkbook: editedWorkbook ?? detected.editedWorkbook ?? null,
+          },
           reviewPatches: input.patches,
           discardedRows: {
             contractRows: input.discardedContractRows,
@@ -780,6 +809,7 @@ export const tradebookImportRouter = createTRPCRouter({
         discardedCount: draft.discardedCount,
         validationErrors: draft.errors,
         readyToImport: draft.errors.length === 0,
+        editedWorkbook: editedWorkbook ?? detected.editedWorkbook ?? null,
       };
     }),
 

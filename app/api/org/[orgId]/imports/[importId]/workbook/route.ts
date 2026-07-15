@@ -5,10 +5,12 @@ import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
 } from "@/lib/organisation-access";
+import type { WorkbookMappingAnalysis } from "@/lib/tradebook/mapping";
+import { getWorkbookReadUrl } from "@/lib/tradebook/uploadthing";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   context: {
     params: Promise<{
       orgId: string;
@@ -40,15 +42,22 @@ export async function GET(
       id: params.importId,
       organisationId: params.orgId,
     },
-    select: { id: true },
+    include: { upload: true },
   });
 
-  if (!record) {
+  if (!record?.upload.storageKey) {
     return new Response("Not found", { status: 404 });
   }
 
-  return Response.redirect(
-    new URL(`/api/org/${params.orgId}/export?format=excel`, request.url),
-    307,
-  );
+  const mapping = record.mappingConfig as WorkbookMappingAnalysis | null;
+  const edited = mapping?.editedWorkbook;
+  const storageKey = edited?.storageKey ?? record.upload.storageKey;
+  const blobUrl = edited?.blobUrl ?? record.upload.blobUrl;
+
+  try {
+    const url = await getWorkbookReadUrl({ storageKey, blobUrl });
+    return Response.redirect(url, 307);
+  } catch {
+    return new Response("Workbook URL could not be resolved.", { status: 502 });
+  }
 }

@@ -1,0 +1,13 @@
+Client name: Granite Construction Materials
+PO reference number: PO-2025-1000
+PO date: 2025-01-29
+Payment terms: Net 15
+Delivery terms: CIF
+
+Please create a draft contract with the following line items:
+
+1. Citric acid anhydrous - quantity 3598 kg at unit price 1.64 per kg
+2. Pallet wooden 48x40 - quantity 1001 unit at unit price 13.49 per unit
+3. Rolled oats organic - quantity 2779 kg at unit price 1.23 per kg
+4. Ethanol 96% - quantity 1895 liter at unit price 1.71 per liter
+5. Combed cotton yarn 30s - quantity 591 cone at unit price 5.27 per cone

@@ -123,6 +123,41 @@ function numeric(value: SnapshotValue) {
   return Number.NaN;
 }
 
+const DECIMAL_SCALE = BigInt(100);
+const DECIMAL_SCALE_DIGITS = 2;
+
+function toDecimalString(value: number) {
+  if (!Number.isFinite(value)) return null;
+  return value.toFixed(12).replace(/\.?0+$/, "");
+}
+
+function scaledDecimal(value: SnapshotValue) {
+  if (value === null || value === undefined || value === "") return null;
+  const normalized =
+    typeof value === "number"
+      ? toDecimalString(value)
+      : typeof value === "string"
+        ? value.trim()
+        : null;
+  if (!normalized) return null;
+  const match = normalized.match(/^(-?)(\d+)(?:\.(\d+))?$/);
+  if (!match) return null;
+  const sign = match[1] === "-" ? BigInt(-1) : BigInt(1);
+  const intPart = BigInt(match[2] ?? "0");
+  const fractionRaw = (match[3] ?? "").slice(0, DECIMAL_SCALE_DIGITS);
+  const fraction = BigInt(fractionRaw.padEnd(DECIMAL_SCALE_DIGITS, "0"));
+  return sign * (intPart * DECIMAL_SCALE + fraction);
+}
+
+function scaledMultiply(left: bigint, right: bigint) {
+  const product = left * right;
+  return product / DECIMAL_SCALE;
+}
+
+function scaledToNumber(value: bigint) {
+  return Number(value) / Number(DECIMAL_SCALE);
+}
+
 function column(mapping: Mapping, field: string) {
   return (mapping[field] ?? 0) + 1;
 }
@@ -347,6 +382,19 @@ export function buildImportDraft({
       const total = numeric(
         recalculatedTotal ?? value(row, lineAnalysis.mapping, "total"),
       );
+      const quantityScaled = scaledDecimal(
+        value(row, lineAnalysis.mapping, "quantity"),
+      );
+      const unitPriceScaled = scaledDecimal(
+        value(row, lineAnalysis.mapping, "unitPrice"),
+      );
+      const providedTotalScaled = scaledDecimal(
+        recalculatedTotal ?? value(row, lineAnalysis.mapping, "total"),
+      );
+      const computedTotalScaled =
+        quantityScaled !== null && unitPriceScaled !== null
+          ? scaledMultiply(quantityScaled, unitPriceScaled)
+          : null;
 
       if (!workbookItemId) {
         errors.push({
@@ -427,19 +475,37 @@ export function buildImportDraft({
           message: "Unit price must be nonnegative.",
         });
       }
-
       return {
         sourceRow: rowNumber,
         workbookItemId,
         poRefNo,
         description,
-        quantity,
+        quantity:
+          quantityScaled !== null
+            ? scaledToNumber(quantityScaled)
+            : Number.isFinite(quantity)
+              ? scaledToNumber(scaledDecimal(quantity) ?? BigInt(0))
+              : quantity,
         quantityUnit:
           text(value(row, lineAnalysis.mapping, "quantityUnit")) || null,
-        unitPrice,
+        unitPrice:
+          unitPriceScaled !== null
+            ? scaledToNumber(unitPriceScaled)
+            : Number.isFinite(unitPrice)
+              ? scaledToNumber(scaledDecimal(unitPrice) ?? BigInt(0))
+              : unitPrice,
         pricingUnit:
           text(value(row, lineAnalysis.mapping, "pricingUnit")) || null,
-        total: Number.isFinite(total) ? total : quantity * unitPrice,
+        total: Number.isFinite(total)
+          ? scaledToNumber(scaledDecimal(total) ?? BigInt(0))
+          : computedTotalScaled !== null
+            ? scaledToNumber(computedTotalScaled)
+            : scaledToNumber(
+                scaledMultiply(
+                  scaledDecimal(quantity) ?? BigInt(0),
+                  scaledDecimal(unitPrice) ?? BigInt(0),
+                ),
+              ),
       };
     });
 
@@ -461,7 +527,10 @@ export function buildImportDraft({
     (totals, lineItem) =>
       totals.set(
         lineItem.poRefNo,
-        (totals.get(lineItem.poRefNo) ?? 0) + lineItem.total,
+        scaledToNumber(
+          (scaledDecimal(totals.get(lineItem.poRefNo) ?? 0) ?? BigInt(0)) +
+            (scaledDecimal(lineItem.total) ?? BigInt(0)),
+        ),
       ),
     new Map<string, number>(),
   );

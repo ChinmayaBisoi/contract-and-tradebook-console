@@ -97,6 +97,23 @@ describe("deterministic workbook mapping", () => {
     expect(analysis.sheets[2]?.missingRequired).toContain("poRefNo");
     expect(analysis.requiresAssistance).toBe(true);
   });
+
+  it("marks assistance required when required headers are fuzzy matches", () => {
+    const snapshot = structuredClone(parsed.workbookSnapshot);
+    const summary = snapshot.sheets[2];
+    if (!summary) throw new Error("Summary sheet missing");
+    summary.rows[0] =
+      summary.rows[0]?.map((header) =>
+        header === "po_ref_no" ? "vendor_po_ref_no" : header,
+      ) ?? [];
+
+    const analysis = analyzeWorkbookMapping(snapshot);
+    expect(analysis.sheets[2]?.mapping.poRefNo).toBeTypeOf("number");
+    expect(analysis.sheets[2]?.headerMatches.poRefNo?.matchType).toBe(
+      "FUZZY_ALIAS",
+    );
+    expect(analysis.requiresAssistance).toBe(true);
+  });
 });
 
 describe("AI mapping fallback", () => {
