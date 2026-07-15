@@ -14,6 +14,14 @@ type ContractFieldDataInput = {
   items: FieldDataItem[];
 };
 
+export function computeContractTotal(items: FieldDataItem[]) {
+  return items.reduce((sum, item) => sum + item.total, 0);
+}
+
+function toDateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
 export function buildContractFieldData({
   contract,
   items,
@@ -21,9 +29,10 @@ export function buildContractFieldData({
   return {
     client_name: contract.clientName,
     po_ref_no: contract.poRefNo,
-    po_date: contract.poDate.toISOString(),
+    po_date: toDateOnly(contract.poDate),
     payment_terms: contract.paymentTerms ?? null,
     delivery_terms: contract.deliveryTerms ?? null,
+    total: computeContractTotal(items),
     items,
   };
 }

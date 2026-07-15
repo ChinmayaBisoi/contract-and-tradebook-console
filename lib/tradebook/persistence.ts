@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  buildContractFieldData,
+  toFieldDataItem,
+} from "@/lib/contracts/contract-field-data";
 import type { buildImportDraft } from "@/lib/tradebook/validation";
 import type { AuthContext } from "@/trpc/init";
 
@@ -14,20 +18,20 @@ export class ImportPersistenceError extends Error {
 const insertContracts = `
 INSERT INTO "Contract" (
   "id", "organisationId", "uploadId", "tradebookImportId", "status",
-  "sourceType", "clientName", "poRefNo", "poDate", "paymentTerms",
+  "sourceType", "clientName", "poRefNo", "poDate", "paymentTerms", "total",
   "deliveryTerms", "fieldData", "createdByClerkUserId", "finalizedAt",
   "archivedAt", "createdAt", "updatedAt"
 )
 SELECT
   row."id", row."organisationId", row."uploadId", row."tradebookImportId",
   row."status"::"ContractStatus", 'EXCEL'::"UploadSourceType", row."clientName",
-  row."poRefNo", row."poDate"::timestamptz, row."paymentTerms",
+  row."poRefNo", row."poDate"::timestamptz, row."paymentTerms", row."total"::numeric,
   row."deliveryTerms", row."fieldData", row."createdByClerkUserId",
   row."finalizedAt"::timestamptz, row."archivedAt"::timestamptz,
   row."createdAt"::timestamptz, row."updatedAt"::timestamptz
 FROM jsonb_to_recordset($1::jsonb) AS row(
   "id" text, "organisationId" text, "uploadId" text, "tradebookImportId" text,
-  "status" text, "clientName" text, "poRefNo" text, "poDate" text,
+  "status" text, "clientName" text, "poRefNo" text, "poDate" text, "total" text,
   "paymentTerms" text, "deliveryTerms" text, "fieldData" jsonb,
   "createdByClerkUserId" text, "finalizedAt" text, "archivedAt" text,
   "createdAt" text, "updatedAt" text
@@ -155,6 +159,8 @@ export async function persistReviewedDraft({
   const contracts = draft.contracts.map((contract) => {
     const id = contractIds.get(contract.poRefNo);
     if (!id) throw new ImportPersistenceError("Contract ID generation failed.");
+    const items = linesByPo.get(contract.poRefNo) ?? [];
+    const total = items.reduce((sum, item) => sum + item.total, 0);
     return {
       id,
       organisationId,
@@ -165,11 +171,29 @@ export async function persistReviewedDraft({
       poRefNo: contract.poRefNo,
       poDate: contract.poDate.toISOString(),
       paymentTerms: contract.paymentTerms,
+      total: String(total),
       deliveryTerms: contract.deliveryTerms,
       fieldData: {
+        ...buildContractFieldData({
+          contract: {
+            clientName: contract.clientName,
+            poRefNo: contract.poRefNo,
+            poDate: contract.poDate,
+            paymentTerms: contract.paymentTerms ?? undefined,
+            deliveryTerms: contract.deliveryTerms ?? undefined,
+          },
+          items: items.map((item) =>
+            toFieldDataItem({
+              description: item.description,
+              quantity: item.quantity,
+              quantityUnit: item.quantityUnit ?? undefined,
+              unitPrice: item.unitPrice,
+              pricingUnit: item.pricingUnit ?? undefined,
+            }),
+          ),
+        }),
         sourceOrganisationId: contract.sourceOrganisationId,
         sourceRow: contract.sourceRow,
-        items: linesByPo.get(contract.poRefNo) ?? [],
       },
       createdByClerkUserId: actor.clerkUserId,
       finalizedAt: contract.status === "FINALIZED" ? now : null,
