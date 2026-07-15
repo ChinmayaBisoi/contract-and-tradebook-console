@@ -11,6 +11,7 @@ import {
   suggestMappingsWithAi,
   type WorkbookMappingAnalysis,
 } from "@/lib/tradebook/mapping";
+import { publishTradebookEvent } from "@/lib/tradebook/events";
 import {
   type ParsedWorkbook,
   parseWorkbookBuffer,
@@ -256,6 +257,21 @@ export const tradebookImportRouter = createTRPCRouter({
         });
       }
 
+      publishTradebookEvent({
+        type: "import.failed",
+        organisationId: input.organisationId,
+        importId: input.uploadId,
+        uploadId: input.uploadId,
+        status: "FAILED",
+      });
+      publishTradebookEvent({
+        type: "upload.updated",
+        organisationId: input.organisationId,
+        importId: input.uploadId,
+        uploadId: input.uploadId,
+        status: "FAILED",
+      });
+
       return { uploadId: input.uploadId };
     }),
 
@@ -296,6 +312,21 @@ export const tradebookImportRouter = createTRPCRouter({
         });
       }
 
+      publishTradebookEvent({
+        type: "import.preparing",
+        organisationId: input.organisationId,
+        importId: record.id,
+        uploadId: record.uploadId,
+        status: "PROCESSING",
+      });
+      publishTradebookEvent({
+        type: "upload.updated",
+        organisationId: input.organisationId,
+        importId: record.id,
+        uploadId: record.uploadId,
+        status: "PROCESSING",
+      });
+
       try {
         const url = await getWorkbookReadUrl({
           storageKey: record.upload.storageKey,
@@ -330,6 +361,13 @@ export const tradebookImportRouter = createTRPCRouter({
         await db.upload.updateMany({
           where: { id: record.uploadId, organisationId: input.organisationId },
           data: { status: "PROCESSED", processedAt: preparedAt },
+        });
+        publishTradebookEvent({
+          type: "upload.updated",
+          organisationId: input.organisationId,
+          importId: record.id,
+          uploadId: record.uploadId,
+          status: "PROCESSED",
         });
 
         return {
@@ -366,6 +404,20 @@ export const tradebookImportRouter = createTRPCRouter({
             },
           }),
         ]);
+        publishTradebookEvent({
+          type: "import.failed",
+          organisationId: input.organisationId,
+          importId: record.id,
+          uploadId: record.uploadId,
+          status: "FAILED",
+        });
+        publishTradebookEvent({
+          type: "upload.updated",
+          organisationId: input.organisationId,
+          importId: record.id,
+          uploadId: record.uploadId,
+          status: "FAILED",
+        });
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "The workbook could not be prepared for review.",
@@ -455,6 +507,7 @@ export const tradebookImportRouter = createTRPCRouter({
       importedContractCount: record.importedContractCount,
       importedLineItemCount: record.importedLineItemCount,
       failureMessage: record.failureMessage,
+      exportPath: `/api/org/${input.organisationId}/imports/${record.id}/workbook`,
       review: reviewState(record),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
@@ -609,6 +662,15 @@ export const tradebookImportRouter = createTRPCRouter({
           status: draft.errors.length === 0 ? "MAPPED" : "PENDING",
         },
       });
+      if (draft.errors.length === 0) {
+        publishTradebookEvent({
+          type: "import.mapped",
+          organisationId: input.organisationId,
+          importId: record.id,
+          uploadId: record.uploadId,
+          status: "MAPPED",
+        });
+      }
       return {
         contractCount: draft.contracts.length,
         lineItemCount: draft.lineItems.length,
@@ -654,7 +716,7 @@ export const tradebookImportRouter = createTRPCRouter({
         existingPoRefs: new Set(existing.map((contract) => contract.poRefNo)),
         ...reviewState(record),
       });
-      return persistReviewedDraft({
+      const result = await persistReviewedDraft({
         organisationId: input.organisationId,
         importId: record.id,
         uploadId: record.uploadId,
@@ -662,5 +724,20 @@ export const tradebookImportRouter = createTRPCRouter({
         actorRole: membership.role,
         draft,
       });
+      publishTradebookEvent({
+        type: "import.imported",
+        organisationId: input.organisationId,
+        importId: record.id,
+        uploadId: record.uploadId,
+        status: "IMPORTED",
+      });
+      publishTradebookEvent({
+        type: "upload.updated",
+        organisationId: input.organisationId,
+        importId: record.id,
+        uploadId: record.uploadId,
+        status: "PROCESSED",
+      });
+      return result;
     }),
 });

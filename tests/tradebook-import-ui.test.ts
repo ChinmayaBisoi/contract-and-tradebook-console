@@ -49,11 +49,13 @@ describe("tradebook import pages", () => {
   it("provides a virtualized, editable, discardable review and commit flow", () => {
     const source = read("components/imports/tradebook-review-workspace.tsx");
     expect(source).toContain("useVirtualizer");
+    expect(source).toContain("Export workbook");
     expect(source).toContain("previewSheet");
     expect(source).toContain("suggestMapping");
     expect(source).toContain("Manual column mapping");
     expect(source).toContain("data.review.patches");
     expect(source).toContain("sourceOrganisations.length === 1");
+    expect(source).toContain("useTradebookImportEvents");
     expect(source).toContain("saveReview");
     expect(source).toContain("discardedContractRows");
     expect(source).toContain("discardedLineItemRows");

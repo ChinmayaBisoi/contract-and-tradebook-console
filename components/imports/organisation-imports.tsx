@@ -1,6 +1,6 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { ArrowRightIcon, FileSpreadsheetIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
@@ -11,6 +11,7 @@ import {
   importSearchParams,
 } from "@/components/imports/search-params";
 import { TradebookUpload } from "@/components/imports/tradebook-upload";
+import { useTradebookImportEvents } from "@/components/imports/use-tradebook-import-events";
 import {
   OperationsPagination,
   TableEmptyState,
@@ -54,6 +55,7 @@ export function OrganisationImports({
   organisationId: string;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(importSearchParams, {
     history: "push",
@@ -65,6 +67,15 @@ export function OrganisationImports({
       getImportListInput(organisationId, state),
     ),
   );
+
+  useTradebookImportEvents({
+    organisationId,
+    onEvent: async () => {
+      await queryClient.invalidateQueries(
+        trpc.tradebookImport.list.queryFilter({ organisationId }),
+      );
+    },
+  });
 
   return (
     <section aria-labelledby="imports-title" className="space-y-4">
