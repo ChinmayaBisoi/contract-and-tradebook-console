@@ -28,4 +28,8 @@ describe("tradebook import API surface", () => {
     expect(source).toContain("discardedLineItemRows");
     expect(source).not.toContain("workbookSnapshot: z.");
   });
+
+  it("returns saved sparse review state so review sessions can resume", () => {
+    expect(source).toContain("review: reviewState(record)");
+  });
 });
