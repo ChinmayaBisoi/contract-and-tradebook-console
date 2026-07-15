@@ -16,10 +16,11 @@ The deployed CloudFront URL and health endpoint were rechecked on July 15, 2026.
 - The deployed landing page and `/api/health` endpoint are public.
 - Protected flows such as dashboard, organisation management, imports, export, and contract creation require signing in through Clerk.
 - No shared evaluator credentials are checked into the repository. For a full end-to-end evaluation, use local development with your own `.env` values from `.env.example`.
-- Sample evaluator assets are included at:
-  - `sample_tradebook_xl.xlsx`
-  - `sample_contract_text.txt`
-  - `docs/contract-import-text-examples.md`
+- Sample evaluator assets for testing are in `samples-for-testing/`:
+  - `samples-for-testing/sample_tradebook_xl.xlsx`
+  - `samples-for-testing/sample_tradebook_xl_ai.xlsx`
+  - `samples-for-testing/sample_contract_text.txt`
+  - `samples-for-testing/contract-import-text-examples.md`
 
 ## Stack
 
@@ -108,8 +109,8 @@ Copy `.env.example` and fill in these values.
 5. Start the app with `bun run dev`.
 6. Sign in through Clerk.
 7. Create or open an organisation.
-8. Use the organisation Imports screen with `sample_tradebook_xl.xlsx`.
-9. Use `sample_contract_text.txt` or `docs/contract-import-text-examples.md` in the contract text import flow.
+8. Use the organisation Imports screen with `samples-for-testing/sample_tradebook_xl.xlsx` (or `samples-for-testing/sample_tradebook_xl_ai.xlsx` for AI mapping).
+9. Use `samples-for-testing/sample_contract_text.txt` or `samples-for-testing/contract-import-text-examples.md` in the contract text import flow.
 
 ### Quality checks
 
@@ -194,9 +195,12 @@ The deployment runbook lives in `docs/deployment-aws.md`.
 
 ## Sample evaluator assets
 
-- `sample_tradebook_xl.xlsx`: multi-sheet tradebook workbook used for import and export verification
-- `sample_contract_text.txt`: plain-text contract intake sample for the AI extraction flow
-- `docs/contract-import-text-examples.md`: additional contract-text variations for manual evaluator testing
+Use the files in `samples-for-testing/` for manual import and extraction testing:
+
+- `samples-for-testing/sample_tradebook_xl.xlsx`: multi-sheet tradebook workbook used for import and export verification
+- `samples-for-testing/sample_tradebook_xl_ai.xlsx`: tradebook workbook suited to exercising AI column mapping
+- `samples-for-testing/sample_contract_text.txt`: plain-text contract intake sample for the AI extraction flow
+- `samples-for-testing/contract-import-text-examples.md`: additional contract-text variations for manual evaluator testing
 
 ## Container workflow
 
