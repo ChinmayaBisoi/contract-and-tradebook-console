@@ -47,12 +47,23 @@ const dateFormatter = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 function formatDate(value: Date | string) {
   return dateFormatter.format(new Date(value));
 }
 
 function titleCase(value: string) {
   return value.charAt(0) + value.slice(1).toLowerCase();
+}
+
+function canViewContractMetrics(role: OrganisationRow["role"]) {
+  return role === "OWNER" || role === "ADMIN";
 }
 
 function getFilter(
@@ -148,6 +159,8 @@ function OrganisationTable({
           <TableHead>Description</TableHead>
           <TableHead>Role</TableHead>
           <TableHead>Members</TableHead>
+          <TableHead>Contracts</TableHead>
+          <TableHead>Total value</TableHead>
           <TableHead>
             <SortButton
               label="Created"
@@ -175,7 +188,7 @@ function OrganisationTable({
         isFetching={props.isFetching}
         hasData={!props.isLoading || rows.length > 0}
         rowCount={props.pageSize}
-        columnCount={6}
+        columnCount={8}
       >
         {rows.map((row) => (
           <TableRow key={row.id}>
@@ -187,6 +200,16 @@ function OrganisationTable({
               <Badge variant="outline">{titleCase(row.role)}</Badge>
             </TableCell>
             <TableCell>{row.activeMemberCount} members</TableCell>
+            <TableCell>
+              {canViewContractMetrics(row.role)
+                ? row.totalContractCount ?? 0
+                : "Restricted"}
+            </TableCell>
+            <TableCell>
+              {canViewContractMetrics(row.role)
+                ? currencyFormatter.format(row.totalContractValue ?? 0)
+                : "Restricted"}
+            </TableCell>
             <TableCell>{formatDate(row.createdAt)}</TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-1">

@@ -10,6 +10,8 @@ export type OrganisationRow = {
   role: "OWNER" | "ADMIN" | "MEMBER";
   status: "ACTIVE" | "DISABLED" | "REMOVED";
   activeMemberCount: number;
+  totalContractCount?: number;
+  totalContractValue?: number;
   createdAt: Date | string;
   updatedAt: Date | string;
 };

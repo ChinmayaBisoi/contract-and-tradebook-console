@@ -11,6 +11,8 @@ const organisation = {
   role: "OWNER" as const,
   status: "ACTIVE" as const,
   activeMemberCount: 4,
+  totalContractCount: 12,
+  totalContractValue: 456789.12,
   createdAt: new Date("2026-07-10T00:00:00.000Z"),
   updatedAt: new Date("2026-07-10T00:00:00.000Z"),
 };
@@ -80,9 +82,28 @@ describe("OrganisationDashboardView", () => {
     expect(screen.getByText("Contract Operations")).toBeInTheDocument();
     expect(screen.getByText("Primary review team")).toBeInTheDocument();
     expect(screen.getByText("4 members")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.getByText("$456,789.12")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Invite member" }),
     ).toBeInTheDocument();
+  });
+
+  it("hides contract totals from members on the dashboard", () => {
+    render(
+      <OrganisationDashboardView
+        {...baseProps()}
+        organisations={[
+          {
+            ...organisation,
+            role: "MEMBER",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getAllByText("Restricted")).toHaveLength(2);
+    expect(screen.queryByText("$456,789.12")).not.toBeInTheDocument();
   });
 
   it("renders combined invitation actions in the invitations tab", () => {
