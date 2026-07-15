@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import * as searchParams from "@/components/organisation/team/team-search-params";
@@ -11,6 +14,16 @@ const current = {
 };
 
 describe("organisation team search params", () => {
+  it("defines shared parsers through the server-safe nuqs entrypoint", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/organisation/team/team-search-params.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain('from "nuqs/server"');
+    expect(source).not.toContain('from "nuqs"');
+  });
+
   it("uses the exact shareable team query keys", () => {
     expect(Object.keys(searchParams.teamSearchParams)).toEqual([
       "filters",

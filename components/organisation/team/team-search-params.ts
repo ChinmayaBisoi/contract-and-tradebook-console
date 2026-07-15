@@ -1,4 +1,4 @@
-import { createParser, parseAsJson, parseAsStringLiteral } from "nuqs";
+import { createParser, parseAsJson, parseAsStringLiteral } from "nuqs/server";
 import { z } from "zod";
 
 const pageSizes = [10, 20, 50] as const;
