@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
+import { type ReactNode, Suspense } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import OrganisationAnalyticsPage from "@/app/(protected)/org/[orgId]/page";
+import { OrganisationAnalytics } from "@/components/organisation/organisation-analytics";
+import { OrganisationAnalyticsSkeleton } from "@/components/organisation/organisation-analytics-skeleton";
+import { OrganisationSectionErrorBoundary } from "@/components/organisation/organisation-section-error";
+import { OrganisationWorkspace } from "@/components/organisation/organisation-workspace";
+import { makeQueryClient } from "@/trpc/query-client";
 
 type Analytics = {
   activeMemberCount: number;
@@ -23,7 +28,8 @@ const analytics: Analytics = {
 };
 
 const clientState = vi.hoisted(() => ({
-  query: vi.fn(),
+  analyticsQuery: vi.fn(),
+  organisationQuery: vi.fn(),
 }));
 
 const serverMocks = vi.hoisted(() => ({
@@ -31,31 +37,55 @@ const serverMocks = vi.hoisted(() => ({
   queryOptions: vi.fn((input: { organisationId: string }) => ({ input })),
 }));
 
+const hydrationState = vi.hoisted(() => ({
+  queryClient: undefined as unknown as QueryClient,
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/org/org_1",
+}));
+
 vi.mock("@/trpc/client", () => ({
   useTRPC: () => ({
     organisation: {
+      get: {
+        queryOptions: ({ id }: { id: string }) => ({
+          queryKey: [["organisation", "get"], { input: { id } }],
+          queryFn: clientState.organisationQuery,
+        }),
+      },
       getAnalytics: {
         queryOptions: ({ organisationId }: { organisationId: string }) => ({
           queryKey: [
             ["organisation", "getAnalytics"],
             { input: { organisationId } },
           ],
-          queryFn: clientState.query,
+          queryFn: clientState.analyticsQuery,
         }),
       },
     },
   }),
 }));
 
-vi.mock("@/trpc/server", () => ({
-  getQueryClient: () => ({ prefetchQuery: serverMocks.prefetchQuery }),
-  HydrateClient: ({ children }: { children: ReactNode }) => children,
-  trpc: {
-    organisation: {
-      getAnalytics: { queryOptions: serverMocks.queryOptions },
+vi.mock("@/trpc/server", async () => {
+  const { dehydrate, HydrationBoundary } = await import(
+    "@tanstack/react-query"
+  );
+
+  return {
+    getQueryClient: () => ({ prefetchQuery: serverMocks.prefetchQuery }),
+    HydrateClient: ({ children }: { children: ReactNode }) => (
+      <HydrationBoundary state={dehydrate(hydrationState.queryClient)}>
+        {children}
+      </HydrationBoundary>
+    ),
+    trpc: {
+      organisation: {
+        getAnalytics: { queryOptions: serverMocks.queryOptions },
+      },
     },
-  },
-}));
+  };
+});
 
 const Page = OrganisationAnalyticsPage as unknown as (props: {
   params: Promise<{ orgId: string }>;
@@ -74,8 +104,10 @@ async function renderPage(queryClient = new QueryClient()) {
 
 describe("OrganisationAnalytics", () => {
   beforeEach(() => {
-    clientState.query.mockReset();
-    clientState.query.mockResolvedValue(analytics);
+    hydrationState.queryClient = makeQueryClient();
+    clientState.analyticsQuery.mockReset();
+    clientState.analyticsQuery.mockResolvedValue(analytics);
+    clientState.organisationQuery.mockReset();
     serverMocks.prefetchQuery.mockReset();
     serverMocks.queryOptions.mockClear();
   });
@@ -113,7 +145,7 @@ describe("OrganisationAnalytics", () => {
     [1, "1 day"],
     [14, "14 days"],
   ])("renders a sensible age label for %i days", async (ageInDays, label) => {
-    clientState.query.mockResolvedValue({ ...analytics, ageInDays });
+    clientState.analyticsQuery.mockResolvedValue({ ...analytics, ageInDays });
 
     await renderPage();
 
@@ -129,7 +161,7 @@ describe("OrganisationAnalytics", () => {
   });
 
   it("shows the analytics skeleton while the client query is pending", async () => {
-    clientState.query.mockReturnValue(new Promise(() => undefined));
+    clientState.analyticsQuery.mockReturnValue(new Promise(() => undefined));
 
     await renderPage();
 
@@ -142,12 +174,105 @@ describe("OrganisationAnalytics", () => {
     expect(screen.queryByText("Active members")).not.toBeInTheDocument();
   });
 
+  it("hydrates a pending analytics query through the fallback before rendering metrics", async () => {
+    let resolveAnalytics: (value: Analytics) => void = () => undefined;
+    const pendingAnalytics = new Promise<Analytics>((resolve) => {
+      resolveAnalytics = resolve;
+    });
+
+    void hydrationState.queryClient.prefetchQuery({
+      queryKey: [
+        ["organisation", "getAnalytics"],
+        { input: { organisationId: "org_1" } },
+      ],
+      queryFn: () => pendingAnalytics,
+    });
+
+    await renderPage();
+
+    expect(
+      screen.getByRole("status", { name: "Loading organisation analytics" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Active members")).not.toBeInTheDocument();
+
+    resolveAnalytics(analytics);
+
+    expect(await screen.findByText("Active members")).toBeInTheDocument();
+    expect(screen.getByText("6")).toBeInTheDocument();
+    expect(clientState.analyticsQuery).not.toHaveBeenCalled();
+  });
+
+  it("keeps the real workspace masthead and navigation when analytics fails", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    clientState.organisationQuery.mockResolvedValue({
+      id: "org_1",
+      name: "Contract Operations",
+      description: "Primary review team",
+      role: "OWNER",
+      status: "ACTIVE",
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+    });
+    clientState.analyticsQuery.mockRejectedValue(
+      new Error("private analytics failure"),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Suspense fallback={<p>Loading organisation</p>}>
+          <OrganisationWorkspace orgId="org_1">
+            <OrganisationSectionErrorBoundary>
+              <Suspense fallback={<OrganisationAnalyticsSkeleton />}>
+                <OrganisationAnalytics organisationId="org_1" />
+              </Suspense>
+            </OrganisationSectionErrorBoundary>
+          </OrganisationWorkspace>
+        </Suspense>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Analytics unavailable" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Contract Operations" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
+      "href",
+      "/org/org_1",
+    );
+    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
+      "href",
+      "/org/org_1/contracts",
+    );
+    expect(screen.getByRole("link", { name: "Audit Trail" })).toHaveAttribute(
+      "href",
+      "/org/org_1/audit-trail",
+    );
+    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
+      "href",
+      "/org/org_1/teams",
+    );
+    expect(
+      screen.getByRole("button", { name: "Try again" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("private analytics failure"),
+    ).not.toBeInTheDocument();
+    consoleError.mockRestore();
+  });
+
   it("keeps the masthead visible and retries a failed analytics query", async () => {
     const user = userEvent.setup();
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    clientState.query
+    clientState.analyticsQuery
       .mockRejectedValueOnce(new Error("private analytics failure"))
       .mockResolvedValueOnce(analytics);
     const queryClient = new QueryClient({
@@ -169,7 +294,7 @@ describe("OrganisationAnalytics", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(await screen.findByText("Active members")).toBeInTheDocument();
-    expect(clientState.query).toHaveBeenCalledTimes(2);
+    expect(clientState.analyticsQuery).toHaveBeenCalledTimes(2);
     consoleError.mockRestore();
   });
 });
