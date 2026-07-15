@@ -90,6 +90,7 @@ enum UploadSourceType {
   EXCEL
   JSON
   AI_EXTRACT
+  MANUAL
 }
 
 enum UploadStatus {

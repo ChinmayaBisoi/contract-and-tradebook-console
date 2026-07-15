@@ -34,7 +34,7 @@ const contractListInput = z.object({
     .object({
       search: z.string().trim().max(100).optional(),
       status: z.enum(["DRAFT", "FINALIZED", "ARCHIVED"]).optional(),
-      sourceType: z.enum(["EXCEL", "JSON", "AI_EXTRACT"]).optional(),
+      sourceType: z.enum(["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"]).optional(),
       poDateFrom: z.coerce.date().optional(),
       poDateTo: z.coerce.date().optional(),
     })
@@ -104,7 +104,7 @@ type ContractListRow = {
   poRefNo: string;
   poDate: Date;
   status: "DRAFT" | "FINALIZED" | "ARCHIVED";
-  sourceType: "EXCEL" | "JSON" | "AI_EXTRACT";
+  sourceType: "EXCEL" | "JSON" | "AI_EXTRACT" | "MANUAL";
   paymentTerms: string | null;
   deliveryTerms: string | null;
   updatedAt: Date;
@@ -143,7 +143,7 @@ type ContractWithRelations = {
   poRefNo: string;
   poDate: Date;
   status: "DRAFT" | "FINALIZED" | "ARCHIVED";
-  sourceType: "EXCEL" | "JSON" | "AI_EXTRACT";
+  sourceType: "EXCEL" | "JSON" | "AI_EXTRACT" | "MANUAL";
   paymentTerms: string | null;
   deliveryTerms: string | null;
   total: { toString(): string };
@@ -460,7 +460,7 @@ export const contractRouter = createTRPCRouter({
         },
         facets: {
           statuses: ["DRAFT", "FINALIZED", "ARCHIVED"] as const,
-          sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT"] as const,
+          sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"] as const,
         },
       };
     }),
@@ -510,8 +510,7 @@ export const contractRouter = createTRPCRouter({
           const created = await tx.contract.create({
             data: {
               organisationId: input.organisationId,
-              sourceType: "JSON",
-              clientName: input.contract.clientName,
+              sourceType: "MANUAL",
               poRefNo: input.contract.poRefNo,
               poDate: input.contract.poDate,
               paymentTerms: input.contract.paymentTerms,

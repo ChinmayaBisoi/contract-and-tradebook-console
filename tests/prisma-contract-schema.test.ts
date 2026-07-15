@@ -28,7 +28,7 @@ describe("contract domain Prisma schema", () => {
     const schema = readFileSync(schemaPath, "utf8");
 
     expect(readBlock(schema, "enum", "UploadSourceType")).toMatch(
-      /EXCEL[\s\S]*JSON[\s\S]*AI_EXTRACT/,
+      /EXCEL[\s\S]*JSON[\s\S]*AI_EXTRACT[\s\S]*MANUAL/,
     );
     expect(readBlock(schema, "enum", "UploadStatus")).toMatch(
       /UPLOADED[\s\S]*PROCESSING[\s\S]*PROCESSED[\s\S]*FAILED/,
@@ -170,6 +170,20 @@ describe("contract domain Prisma schema", () => {
     );
     expect(migration).toContain(
       'FOREIGN KEY ("contractId") REFERENCES "Contract"("id") ON DELETE CASCADE ON UPDATE CASCADE',
+    );
+  });
+
+  it("includes a deployable migration for MANUAL source type", () => {
+    const migration = readFileSync(
+      path.join(
+        process.cwd(),
+        "prisma/migrations/20260716050000_add_manual_source_type/migration.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toContain(
+      `ALTER TYPE "UploadSourceType" ADD VALUE 'MANUAL'`,
     );
   });
 

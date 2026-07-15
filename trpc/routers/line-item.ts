@@ -26,7 +26,7 @@ const lineItemListInput = z.object({
       contractId: z.string().min(1).optional(),
       quantityUnit: z.string().trim().max(50).optional(),
       pricingUnit: z.string().trim().max(50).optional(),
-      sourceType: z.enum(["EXCEL", "JSON", "AI_EXTRACT"]).optional(),
+      sourceType: z.enum(["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"]).optional(),
       totalMin: z.coerce.number().nonnegative().optional(),
       totalMax: z.coerce.number().nonnegative().optional(),
     })
@@ -120,12 +120,12 @@ type LineItemResult = {
   total: { toString(): string } | null;
   sortOrder: number;
   updatedAt: Date;
-  upload: { sourceType: "EXCEL" | "JSON" | "AI_EXTRACT" } | null;
+  upload: { sourceType: "EXCEL" | "JSON" | "AI_EXTRACT" | "MANUAL" } | null;
   contract: {
     id: string;
     poRefNo: string;
     clientName: string;
-    sourceType: "EXCEL" | "JSON" | "AI_EXTRACT";
+    sourceType: "EXCEL" | "JSON" | "AI_EXTRACT" | "MANUAL";
     organisationId: string;
     status: "DRAFT" | "FINALIZED" | "ARCHIVED";
     poDate: Date;
@@ -379,7 +379,7 @@ export const lineItemRouter = createTRPCRouter({
           contracts: [...contracts.values()],
           quantityUnits: [...quantityUnits].sort(),
           pricingUnits: [...pricingUnits].sort(),
-          sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT"] as const,
+          sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"] as const,
         },
       };
     }),

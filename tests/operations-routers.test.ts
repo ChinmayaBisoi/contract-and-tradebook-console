@@ -59,7 +59,7 @@ describe("organisation operations routers", () => {
       pagination: { page: 1, pageSize: 10, total: 1, pageCount: 1 },
       facets: {
         statuses: ["DRAFT", "FINALIZED", "ARCHIVED"],
-        sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT"],
+        sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"],
       },
     });
   });
@@ -171,7 +171,7 @@ describe("organisation operations routers", () => {
       ],
       quantityUnits: ["MT"],
       pricingUnits: ["MT"],
-      sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT"],
+      sourceTypes: ["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"],
     });
   });
 

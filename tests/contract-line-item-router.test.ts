@@ -294,7 +294,7 @@ describe("contract and line item routers", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it("creates draft contracts and records a create event", async () => {
+  it("creates draft contracts with MANUAL provenance and records a create event", async () => {
     const { db, tx } = createDb({});
     tx.contract.create.mockResolvedValue({
       id: "contract_1",
@@ -303,7 +303,7 @@ describe("contract and line item routers", () => {
       poRefNo: "PO-1",
       poDate: new Date("2026-07-01T00:00:00.000Z"),
       status: "DRAFT",
-      sourceType: "JSON",
+      sourceType: "MANUAL",
       paymentTerms: "Net 30",
       deliveryTerms: "FOB",
       total: { toString: () => "0" },
@@ -325,13 +325,24 @@ describe("contract and line item routers", () => {
       },
     });
 
-    expect(result).toMatchObject({ id: "contract_1", status: "DRAFT" });
+    expect(result).toMatchObject({
+      id: "contract_1",
+      status: "DRAFT",
+      sourceType: "MANUAL",
+    });
+    const createArgs = tx.contract.create.mock.calls[0]?.[0] as {
+      data: { sourceType: string };
+    };
+    expect(createArgs.data.sourceType).toBe("MANUAL");
     expect(tx.auditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           action: "CREATE",
           entityType: "CONTRACT",
-          afterState: expect.objectContaining({ status: "DRAFT" }),
+          afterState: expect.objectContaining({
+            status: "DRAFT",
+            sourceType: "MANUAL",
+          }),
         }),
       }),
     );

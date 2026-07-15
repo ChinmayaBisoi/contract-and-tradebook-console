@@ -7,7 +7,7 @@ import {
 
 const pageSizes = [10, 20, 50] as const;
 const directions = ["asc", "desc"] as const;
-const sources = ["EXCEL", "JSON", "AI_EXTRACT"] as const;
+const sources = ["EXCEL", "JSON", "AI_EXTRACT", "MANUAL"] as const;
 
 const pageSizeParser = createParser({
   parse(value) {
