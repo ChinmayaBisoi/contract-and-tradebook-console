@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Suspense } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import OrganisationError from "@/app/(protected)/org/[orgId]/error";
 import { OrganisationNav } from "@/components/organisation/organisation-nav";
-import { OrganisationWorkspace } from "@/components/organisation/organisation-workspace";
+import {
+  OrganisationWorkspace,
+  OrganisationWorkspaceErrorBoundary,
+} from "@/components/organisation/organisation-workspace";
 import { OrganisationWorkspaceSkeleton } from "@/components/organisation/organisation-workspace-skeleton";
 
 const organisation = {
@@ -19,6 +24,11 @@ const organisation = {
 
 let pathname = "/org/org_1";
 let query = vi.fn().mockResolvedValue(organisation);
+
+const serverMocks = vi.hoisted(() => ({
+  prefetchQuery: vi.fn(),
+  queryOptions: vi.fn((input: { id: string }) => ({ input })),
+}));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
@@ -37,6 +47,16 @@ vi.mock("@/trpc/client", () => ({
   }),
 }));
 
+vi.mock("@/trpc/server", () => ({
+  getQueryClient: () => ({ prefetchQuery: serverMocks.prefetchQuery }),
+  HydrateClient: ({ children }: { children: React.ReactNode }) => children,
+  trpc: {
+    organisation: {
+      get: { queryOptions: serverMocks.queryOptions },
+    },
+  },
+}));
+
 function renderWorkspace(queryClient = new QueryClient()) {
   return render(
     <QueryClientProvider client={queryClient}>
@@ -50,6 +70,25 @@ function renderWorkspace(queryClient = new QueryClient()) {
 }
 
 describe("OrganisationWorkspace", () => {
+  it("starts server prefetch without waiting for organisation data", async () => {
+    serverMocks.prefetchQuery.mockReturnValue(new Promise(() => undefined));
+    const { default: OrganisationLayout } = await import(
+      "@/app/(protected)/org/[orgId]/layout"
+    );
+
+    const result = await Promise.race([
+      OrganisationLayout({
+        children: <p>Analytics placeholder</p>,
+        params: Promise.resolve({ orgId: "org_1" }),
+      }),
+      new Promise((resolve) => setTimeout(() => resolve("timed out"), 25)),
+    ]);
+
+    expect(result).not.toBe("timed out");
+    expect(serverMocks.queryOptions).toHaveBeenCalledWith({ id: "org_1" });
+    expect(serverMocks.prefetchQuery).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the organisation masthead, role, and child content", async () => {
     renderWorkspace();
 
@@ -101,5 +140,80 @@ describe("OrganisationWorkspace", () => {
     expect(
       screen.queryByRole("heading", { name: "Contract Operations" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows safe access copy without exposing backend details", () => {
+    const error = Object.assign(new Error("sensitive database details"), {
+      data: { code: "FORBIDDEN" },
+    });
+
+    render(<OrganisationError error={error} reset={vi.fn()} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Organisation access restricted" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Your account does not have access to this organisation.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("sensitive database details"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Back to dashboard" }),
+    ).toHaveAttribute("href", "/dashboard");
+  });
+
+  it("offers retry with generic safe copy for unavailable organisations", async () => {
+    const user = userEvent.setup();
+    const reset = vi.fn();
+    const error = Object.assign(new Error("private upstream response"), {
+      data: { code: "NOT_FOUND" },
+    });
+
+    render(<OrganisationError error={error} reset={reset} />);
+
+    expect(
+      screen.getByRole("heading", { name: "Organisation unavailable" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "This organisation could not be found or is temporarily unavailable.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("private upstream response"),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(reset).toHaveBeenCalledTimes(1);
+  });
+
+  it("catches workspace query failures with organisation recovery UI", () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const error = Object.assign(new Error("private query failure"), {
+      data: { code: "UNAUTHORIZED" },
+    });
+
+    function FailingWorkspace() {
+      throw error;
+    }
+
+    render(
+      <OrganisationWorkspaceErrorBoundary>
+        <FailingWorkspace />
+      </OrganisationWorkspaceErrorBoundary>,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Organisation access restricted" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("private query failure")).not.toBeInTheDocument();
+
+    consoleError.mockRestore();
   });
 });

@@ -1,10 +1,117 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import {
+  QueryErrorResetBoundary,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
+import Link from "next/link";
+import { Component } from "react";
 
 import { OrganisationNav } from "@/components/organisation/organisation-nav";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useTRPC } from "@/trpc/client";
+
+export type CodedOrganisationError = Error & {
+  data?: { code?: unknown };
+  shape?: { data?: { code?: unknown } };
+};
+
+function getSafeErrorCode(error: CodedOrganisationError) {
+  const codes = [error.data?.code, error.shape?.data?.code];
+
+  return codes.find((code): code is string => typeof code === "string");
+}
+
+export function OrganisationErrorView({
+  error,
+  onRetry,
+}: {
+  error: CodedOrganisationError;
+  onRetry: () => void;
+}) {
+  const code = getSafeErrorCode(error);
+  const isAccessError = code === "UNAUTHORIZED" || code === "FORBIDDEN";
+  const title = isAccessError
+    ? "Organisation access restricted"
+    : "Organisation unavailable";
+  const description = isAccessError
+    ? "Your account does not have access to this organisation."
+    : "This organisation could not be found or is temporarily unavailable.";
+
+  return (
+    <main className="grid flex-1 place-items-center px-4 py-12 lg:px-6">
+      <section
+        role="alert"
+        aria-labelledby="organisation-error-title"
+        className="w-full max-w-lg rounded-xl border bg-card p-6 shadow-sm"
+      >
+        <div className="space-y-2">
+          <h1
+            id="organisation-error-title"
+            className="text-xl font-semibold tracking-tight"
+          >
+            {title}
+          </h1>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+          <Button type="button" onClick={onRetry}>
+            Try again
+          </Button>
+          <Button variant="outline" render={<Link href="/dashboard" />}>
+            Back to dashboard
+          </Button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+class OrganisationErrorBoundary extends Component<
+  {
+    children: React.ReactNode;
+    resetQueries: () => void;
+  },
+  { error: CodedOrganisationError | null }
+> {
+  state = { error: null } as { error: CodedOrganisationError | null };
+
+  static getDerivedStateFromError(error: CodedOrganisationError) {
+    return { error };
+  }
+
+  retry = () => {
+    this.props.resetQueries();
+    this.setState({ error: null });
+  };
+
+  render() {
+    if (this.state.error) {
+      return (
+        <OrganisationErrorView error={this.state.error} onRetry={this.retry} />
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export function OrganisationWorkspaceErrorBoundary({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <QueryErrorResetBoundary>
+      {({ reset }) => (
+        <OrganisationErrorBoundary resetQueries={reset}>
+          {children}
+        </OrganisationErrorBoundary>
+      )}
+    </QueryErrorResetBoundary>
+  );
+}
 
 function formatRole(role: string) {
   return role.charAt(0) + role.slice(1).toLowerCase();
