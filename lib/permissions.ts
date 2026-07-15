@@ -17,6 +17,7 @@ export const organisationActions = [
   "line-item:read",
   "line-item:create",
   "line-item:update",
+  "audit:read",
 ] as const;
 
 export type OrganisationAction = (typeof organisationActions)[number];
@@ -41,12 +42,14 @@ export const orgRolePermissions: Record<
     "line-item:read",
     "line-item:create",
     "line-item:update",
+    "audit:read",
   ]),
   MEMBER: new Set([
     "organisation:read",
     "organisation:user:read",
     "contract:read",
     "line-item:read",
+    "audit:read",
   ]),
 };
 

@@ -310,6 +310,9 @@ export function OrganisationTeam({
       queryClient.invalidateQueries(
         trpc.organisation.get.queryFilter({ id: organisationId }),
       ),
+      queryClient.invalidateQueries(
+        trpc.audit.list.queryFilter({ organisationId }),
+      ),
     ];
 
     if (includeInvitations) {

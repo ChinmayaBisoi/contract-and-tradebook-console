@@ -1,40 +1,45 @@
+import { createLoader } from "nuqs/server";
 import { Suspense } from "react";
 
-import { getDefaultContractListInput } from "@/components/contracts/contracts-query";
-import { OrganisationContracts } from "@/components/contracts/organisation-contracts";
+import { OrganisationContracts } from "@/components/operations/contracts";
 import {
-  ContractsErrorBoundary,
-  ContractsTableSkeleton,
-} from "@/components/contracts/contracts-table-states";
+  contractSearchParams,
+  getContractListInput,
+} from "@/components/operations/search-params";
+import {
+  OperationsErrorBoundary,
+  OperationsTableSkeleton,
+} from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
-async function OrganisationContractsSection({
+const loadContractSearchParams = createLoader(contractSearchParams);
+
+export default async function OrganisationContractsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ orgId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { orgId } = await params;
+  const [{ orgId }, queryState] = await Promise.all([
+    params,
+    loadContractSearchParams(searchParams),
+  ]);
   const queryClient = getQueryClient();
 
   void queryClient.prefetchQuery(
-    trpc.contract.list.queryOptions(getDefaultContractListInput(orgId)),
+    trpc.contract.list.queryOptions(getContractListInput(orgId, queryState)),
   );
 
-  return <OrganisationContracts organisationId={orgId} />;
-}
-
-export default function OrganisationContractsPage({
-  params,
-}: {
-  params: Promise<{ orgId: string }>;
-}) {
   return (
     <HydrateClient>
-      <ContractsErrorBoundary>
-        <Suspense fallback={<ContractsTableSkeleton title="Loading contracts" />}>
-          <OrganisationContractsSection params={params} />
+      <OperationsErrorBoundary>
+        <Suspense
+          fallback={<OperationsTableSkeleton title="Loading contracts" />}
+        >
+          <OrganisationContracts organisationId={orgId} />
         </Suspense>
-      </ContractsErrorBoundary>
+      </OperationsErrorBoundary>
     </HydrateClient>
   );
 }

@@ -27,7 +27,7 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
       create: vi.fn(),
       update: vi.fn(),
     },
-    contractEvent: {
+    auditEvent: {
       create: vi.fn().mockResolvedValue({ id: "event_1" }),
     },
     organisationUser: {
@@ -142,10 +142,11 @@ describe("contract and line item routers", () => {
       clientName: "Acme Updated",
       paymentTerms: "Net 30",
     });
-    expect(tx.contractEvent.create).toHaveBeenCalledWith(
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          eventType: "UPDATE",
+          action: "UPDATE",
+          entityType: "CONTRACT",
           actorClerkUserId: "owner_1",
         }),
       }),
@@ -279,10 +280,11 @@ describe("contract and line item routers", () => {
       description: "Steel bolts premium",
       total: "240",
     });
-    expect(tx.contractEvent.create).toHaveBeenCalledWith(
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          eventType: "UPDATE",
+          action: "UPDATE",
+          entityType: "LINE_ITEM",
           actorClerkUserId: "owner_1",
         }),
       }),

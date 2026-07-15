@@ -13,7 +13,7 @@ function createCaller(db: Record<string, unknown>, auth = ownerAuth) {
 }
 
 describe("invitation router", () => {
-  it("does not expose direct organisation membership creation", async () => {
+  it("does not expose direct organisation membership creation", () => {
     const caller = createCaller({
       organisationUser: {
         findUnique: vi.fn().mockResolvedValue({
@@ -24,14 +24,7 @@ describe("invitation router", () => {
       },
     });
 
-    await expect(
-      caller.organisation.inviteMember({
-        organisationId: "org_1",
-        clerkUserId: "member_1",
-        clerkUserEmail: "member@example.com",
-        role: "MEMBER",
-      }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect("inviteMember" in caller.organisation).toBe(false);
   });
 
   it("lists combined received and managed invitations with allowed actions", async () => {
@@ -124,8 +117,16 @@ describe("invitation router", () => {
   });
 
   it("normalizes invitation emails and lets owners invite administrators", async () => {
-    const create = vi.fn().mockResolvedValue({ id: "invite_1" });
-    const caller = createCaller({
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
+    const create = vi.fn().mockResolvedValue({
+      id: "invite_1",
+      email: "admin@example.com",
+      organisationId: "org_1",
+      role: "ADMIN",
+      status: "PENDING",
+      expiresAt: new Date("2026-07-21T12:00:00.000Z"),
+    });
+    const db = {
       organisationUser: {
         findUnique: vi.fn().mockResolvedValue({
           role: "OWNER",
@@ -138,7 +139,12 @@ describe("invitation router", () => {
         findFirst: vi.fn().mockResolvedValue(null),
         create,
       },
-    });
+      auditEvent: { create: auditCreate },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback(db),
+      ),
+    };
+    const caller = createCaller(db);
 
     await expect(
       caller.invitation.create({
@@ -147,7 +153,7 @@ describe("invitation router", () => {
         role: "ADMIN",
         expiresAt: new Date("2026-07-21T12:00:00.000Z"),
       }),
-    ).resolves.toEqual({ id: "invite_1" });
+    ).resolves.toMatchObject({ id: "invite_1" });
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         email: "admin@example.com",
@@ -156,6 +162,20 @@ describe("invitation router", () => {
         inviterEmail: "owner@example.com",
         role: "ADMIN",
         status: "PENDING",
+      }),
+    });
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        organisationId: "org_1",
+        actorClerkUserId: "owner_1",
+        actorRole: "OWNER",
+        action: "INVITE",
+        entityType: "INVITATION",
+        entityId: "invite_1",
+        entityLabel: "admin@example.com",
+        afterState: { role: "ADMIN", status: "PENDING" },
+        changedFields: ["role", "status"],
+        invitationId: "invite_1",
       }),
     });
   });

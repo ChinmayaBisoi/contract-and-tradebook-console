@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { baseProcedure, createTRPCRouter } from "@/trpc/init";
+import { auditRouter } from "@/trpc/routers/audit";
 import { contractRouter } from "@/trpc/routers/contract";
 import { invitationRouter } from "@/trpc/routers/invitation";
 import { lineItemRouter } from "@/trpc/routers/line-item";
@@ -11,6 +12,7 @@ export const appRouter = createTRPCRouter({
   invitation: invitationRouter,
   contract: contractRouter,
   lineItem: lineItemRouter,
+  audit: auditRouter,
   hello: baseProcedure
     .input(
       z.object({

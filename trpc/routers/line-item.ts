@@ -1,14 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { buildAuditData, writeAuditEvent } from "@/lib/audit";
+import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
 import { buildContractFieldData } from "@/lib/contracts/contract-field-data";
 import { lineItemInputSchema } from "@/lib/contracts/contract-schemas";
 import { Prisma } from "@/lib/generated/prisma/client";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
+  type OrganisationMembership,
 } from "@/lib/organisation-access";
-import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const lineItemListInput = z.object({
@@ -53,7 +55,9 @@ const lineItemUpdateInput = z.object({
 });
 
 type OperationsDb = {
-  organisationUser: { findUnique: (args: unknown) => Promise<unknown> };
+  organisationUser: {
+    findUnique: (args: unknown) => Promise<OrganisationMembership | null>;
+  };
   contract: {
     findFirst: (args: unknown) => Promise<ContractRecord | null>;
     update: (args: unknown) => Promise<ContractRecord>;
@@ -65,8 +69,10 @@ type OperationsDb = {
     create: (args: unknown) => Promise<LineItemResult>;
     update: (args: unknown) => Promise<LineItemResult>;
   };
-  contractEvent: {
-    create: (args: unknown) => Promise<unknown>;
+  auditEvent: {
+    create: (args: {
+      data: ReturnType<typeof buildAuditData>;
+    }) => Promise<unknown>;
   };
   $transaction: <T>(callback: (tx: OperationsDb) => Promise<T>) => Promise<T>;
 };
@@ -87,6 +93,7 @@ type ContractRecord = {
     unitPrice: { toString(): string };
     pricingUnit: string | null;
     total: { toString(): string } | null;
+    sortOrder: number;
   }>;
 };
 
@@ -235,10 +242,8 @@ export const lineItemRouter = createTRPCRouter({
       }
 
       const where: Record<string, unknown> = {
-        contract: {
-          organisationId: input.organisationId,
-          ...(contractId ? { id: contractId } : {}),
-        },
+        organisationId: input.organisationId,
+        ...(contractId ? { contractId } : {}),
       };
       if (input.filters.search) {
         where.OR = [
@@ -274,8 +279,6 @@ export const lineItemRouter = createTRPCRouter({
       if (input.filters.pricingUnit) where.pricingUnit = input.filters.pricingUnit;
       if (input.filters.sourceType)
         where.contract = {
-          organisationId: input.organisationId,
-          ...(contractId ? { id: contractId } : {}),
           sourceType: input.filters.sourceType,
         };
       if (
@@ -321,7 +324,7 @@ export const lineItemRouter = createTRPCRouter({
         }),
         db.lineItem.count({ where }),
         db.lineItem.findMany({
-          where: { contract: { organisationId: input.organisationId } },
+          where: { organisationId: input.organisationId },
           distinct: ["contractId", "quantityUnit", "pricingUnit"],
           select: {
             quantityUnit: true,
@@ -365,7 +368,7 @@ export const lineItemRouter = createTRPCRouter({
     .input(lineItemCreateInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as OperationsDb;
-      await checkOrgPermission({
+      const membership = await checkOrgPermission({
         clerkUserId: ctx.auth.clerkUserId,
         organisationId: input.organisationId,
         action: "line-item:create",
@@ -396,6 +399,7 @@ export const lineItemRouter = createTRPCRouter({
 
           const lineItem = await tx.lineItem.create({
             data: {
+              organisationId: input.organisationId,
               contractId: contract.id,
               description: input.lineItem.description,
               quantity: new Prisma.Decimal(input.lineItem.quantity),
@@ -439,13 +443,23 @@ export const lineItemRouter = createTRPCRouter({
 
           await syncContractFieldData(tx, contractAfterCreate);
 
-          await tx.contractEvent.create({
-            data: {
-              contractId: contract.id,
-              organisationId: input.organisationId,
-              actorClerkUserId: ctx.auth.clerkUserId,
-              eventType: "UPDATE",
-              payload: { action: "LINE_ITEM_CREATE", lineItemId: lineItem.id },
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "CREATE",
+            entityType: "LINE_ITEM",
+            entityId: lineItem.id,
+            entityLabel: lineItem.description,
+            contractId: contract.id,
+            lineItemId: lineItem.id,
+            afterState: {
+              description: lineItem.description,
+              quantity: lineItem.quantity.toString(),
+              quantityUnit: lineItem.quantityUnit,
+              unitPrice: lineItem.unitPrice.toString(),
+              pricingUnit: lineItem.pricingUnit,
+              total: lineItem.total?.toString() ?? null,
             },
           });
 
@@ -460,7 +474,7 @@ export const lineItemRouter = createTRPCRouter({
     .input(lineItemUpdateInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as OperationsDb;
-      await checkOrgPermission({
+      const membership = await checkOrgPermission({
         clerkUserId: ctx.auth.clerkUserId,
         organisationId: input.organisationId,
         action: "line-item:update",
@@ -472,7 +486,7 @@ export const lineItemRouter = createTRPCRouter({
           const existing = await tx.lineItem.findFirst({
             where: {
               id: input.id,
-              contract: { organisationId: input.organisationId },
+              organisationId: input.organisationId,
             },
             include: {
               upload: { select: { sourceType: true } },
@@ -548,13 +562,31 @@ export const lineItemRouter = createTRPCRouter({
 
           await syncContractFieldData(tx, contractAfterUpdate);
 
-          await tx.contractEvent.create({
-            data: {
-              contractId: existing.contract.id,
-              organisationId: input.organisationId,
-              actorClerkUserId: ctx.auth.clerkUserId,
-              eventType: "UPDATE",
-              payload: { action: "LINE_ITEM_UPDATE", lineItemId: updated.id },
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "UPDATE",
+            entityType: "LINE_ITEM",
+            entityId: updated.id,
+            entityLabel: updated.description,
+            contractId: existing.contract.id,
+            lineItemId: updated.id,
+            beforeState: {
+              description: existing.description,
+              quantity: existing.quantity.toString(),
+              quantityUnit: existing.quantityUnit,
+              unitPrice: existing.unitPrice.toString(),
+              pricingUnit: existing.pricingUnit,
+              total: existing.total?.toString() ?? null,
+            },
+            afterState: {
+              description: updated.description,
+              quantity: updated.quantity.toString(),
+              quantityUnit: updated.quantityUnit,
+              unitPrice: updated.unitPrice.toString(),
+              pricingUnit: updated.pricingUnit,
+              total: updated.total?.toString() ?? null,
             },
           });
 

@@ -38,6 +38,7 @@ const pagination = { page: 1, pageSize: 10, total: 1, pageCount: 1 };
 
 function baseProps() {
   return {
+    tab: "organisations" as const,
     activeTab: "organisations" as const,
     filters: [],
     page: 1,

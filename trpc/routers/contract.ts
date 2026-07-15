@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
+import { buildAuditData, writeAuditEvent } from "@/lib/audit";
+import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
 import { buildContractFieldData } from "@/lib/contracts/contract-field-data";
 import { contractInputSchema } from "@/lib/contracts/contract-schemas";
 import { Prisma } from "@/lib/generated/prisma/client";
@@ -8,7 +10,6 @@ import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
 } from "@/lib/organisation-access";
-import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const contractListInput = z.object({
@@ -81,8 +82,10 @@ type ContractDb = {
     create: (args: unknown) => Promise<ContractWithRelations>;
     update: (args: unknown) => Promise<ContractWithRelations>;
   };
-  contractEvent: {
-    create: (args: unknown) => Promise<unknown>;
+  auditEvent: {
+    create: (args: {
+      data: ReturnType<typeof buildAuditData>;
+    }) => Promise<unknown>;
   };
   $queryRaw: (query: unknown) => Promise<ContractListRow[]>;
   $transaction: <T>(callback: (tx: ContractDb) => Promise<T>) => Promise<T>;
@@ -111,13 +114,7 @@ type ContractWithRelations = {
     sortOrder: number;
     updatedAt: Date;
   }>;
-  events: Array<{
-    id: string;
-    eventType: "CREATE" | "UPDATE" | "STATUS_CHANGE" | "DELETE" | "IMPORT";
-    actorClerkUserId: string | null;
-    payload: unknown;
-    createdAt: Date;
-  }>;
+  auditEvents?: unknown[];
 };
 
 const sortColumns = {
@@ -296,7 +293,7 @@ export const contractRouter = createTRPCRouter({
       where: { id: input.id, organisationId: input.organisationId },
       include: {
         lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-        events: { orderBy: { createdAt: "desc" }, take: 30 },
+        auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
       },
     });
 
@@ -328,7 +325,7 @@ export const contractRouter = createTRPCRouter({
     .input(contractCreateInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as ContractDb;
-      await checkOrgPermission({
+      const membership = await checkOrgPermission({
         clerkUserId: ctx.auth.clerkUserId,
         organisationId: input.organisationId,
         action: "contract:create",
@@ -354,20 +351,24 @@ export const contractRouter = createTRPCRouter({
             },
             include: {
               lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-              events: { orderBy: { createdAt: "desc" }, take: 30 },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
 
-          await tx.contractEvent.create({
-            data: {
-              contractId: created.id,
-              organisationId: input.organisationId,
-              actorClerkUserId: ctx.auth.clerkUserId,
-              eventType: "CREATE",
-              payload: {
-                sourceType: "JSON",
-                poRefNo: created.poRefNo,
-              },
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "CREATE",
+            entityType: "CONTRACT",
+            entityId: created.id,
+            entityLabel: created.poRefNo,
+            contractId: created.id,
+            afterState: {
+              clientName: created.clientName,
+              poRefNo: created.poRefNo,
+              poDate: created.poDate,
+              sourceType: created.sourceType,
             },
           });
 
@@ -390,7 +391,7 @@ export const contractRouter = createTRPCRouter({
     .input(contractUpdateInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as ContractDb;
-      await checkOrgPermission({
+      const membership = await checkOrgPermission({
         clerkUserId: ctx.auth.clerkUserId,
         organisationId: input.organisationId,
         action: "contract:update",
@@ -403,7 +404,7 @@ export const contractRouter = createTRPCRouter({
             where: { id: input.id, organisationId: input.organisationId },
             include: {
               lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-              events: { orderBy: { createdAt: "desc" }, take: 30 },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
 
@@ -440,20 +441,32 @@ export const contractRouter = createTRPCRouter({
             },
             include: {
               lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-              events: { orderBy: { createdAt: "desc" }, take: 30 },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
 
-          await tx.contractEvent.create({
-            data: {
-              contractId: updated.id,
-              organisationId: input.organisationId,
-              actorClerkUserId: ctx.auth.clerkUserId,
-              eventType: "UPDATE",
-              payload: {
-                poRefNo: updated.poRefNo,
-                changedFields: ["clientName", "poRefNo", "poDate", "terms"],
-              },
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "UPDATE",
+            entityType: "CONTRACT",
+            entityId: updated.id,
+            entityLabel: updated.poRefNo,
+            contractId: updated.id,
+            beforeState: {
+              clientName: existing.clientName,
+              poRefNo: existing.poRefNo,
+              poDate: existing.poDate,
+              paymentTerms: existing.paymentTerms,
+              deliveryTerms: existing.deliveryTerms,
+            },
+            afterState: {
+              clientName: updated.clientName,
+              poRefNo: updated.poRefNo,
+              poDate: updated.poDate,
+              paymentTerms: updated.paymentTerms,
+              deliveryTerms: updated.deliveryTerms,
             },
           });
 

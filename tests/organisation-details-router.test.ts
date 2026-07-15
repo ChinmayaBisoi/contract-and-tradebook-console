@@ -348,16 +348,28 @@ describe("organisation details router", () => {
   });
 
   it("lets owners change member roles", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const update = vi.fn().mockResolvedValue({
+      id: "membership_1",
       clerkUserId: "member_1",
+      clerkUserName: "Member User",
+      clerkUserEmail: "member@example.com",
+      status: "ACTIVE",
       role: "ADMIN",
     });
     const tx = {
       organisationUser: {
-        findUnique: vi.fn().mockResolvedValue(activeMembership("MEMBER")),
+        findUnique: vi.fn().mockResolvedValue({
+          id: "membership_1",
+          clerkUserId: "member_1",
+          clerkUserName: "Member User",
+          clerkUserEmail: "member@example.com",
+          ...activeMembership("MEMBER"),
+        }),
         count: vi.fn(),
         update,
       },
+      auditEvent: { create: auditCreate },
     };
     const transaction = vi.fn(
       async (operation: (client: typeof tx) => Promise<unknown>) =>
@@ -376,7 +388,7 @@ describe("organisation details router", () => {
         clerkUserId: "member_1",
         role: "ADMIN",
       }),
-    ).resolves.toEqual({ clerkUserId: "member_1", role: "ADMIN" });
+    ).resolves.toMatchObject({ clerkUserId: "member_1", role: "ADMIN" });
     expect(update).toHaveBeenCalledWith({
       where: {
         clerkUserId_organisationId: {
@@ -389,6 +401,70 @@ describe("organisation details router", () => {
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "Serializable",
     });
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        organisationId: "org_1",
+        actorClerkUserId: "owner_1",
+        actorName: "Owner User",
+        actorEmail: "owner@example.com",
+        actorRole: "OWNER",
+        action: "ROLE_CHANGE",
+        entityType: "ORGANISATION_USER",
+        entityId: "membership_1",
+        entityLabel: "Member User",
+        beforeState: { role: "MEMBER", status: "ACTIVE" },
+        afterState: { role: "ADMIN", status: "ACTIVE" },
+        changedFields: ["role"],
+        organisationUserId: "membership_1",
+      }),
+    });
+  });
+
+  it("records member removal as a delete with only the prior snapshot", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
+    const tx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "membership_1",
+          clerkUserId: "member_1",
+          clerkUserName: "Member User",
+          clerkUserEmail: "member@example.com",
+          ...activeMembership("MEMBER"),
+        }),
+        count: vi.fn(),
+        update: vi.fn().mockResolvedValue({
+          id: "membership_1",
+          status: "REMOVED",
+        }),
+      },
+      auditEvent: { create: auditCreate },
+    };
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+      },
+      $transaction: vi.fn(
+        async (operation: (client: typeof tx) => Promise<unknown>) =>
+          operation(tx),
+      ),
+    });
+
+    await caller.organisation.removeMember({
+      organisationId: "org_1",
+      clerkUserId: "member_1",
+    });
+
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "DELETE",
+        entityType: "ORGANISATION_USER",
+        beforeState: { role: "MEMBER", status: "ACTIVE" },
+        changedFields: ["role", "status"],
+      }),
+    });
+    expect(auditCreate.mock.calls[0]?.[0].data).not.toHaveProperty(
+      "afterState",
+    );
   });
 
   it("prevents demoting the last active owner", async () => {
