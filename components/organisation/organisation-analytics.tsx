@@ -68,6 +68,7 @@ const timelineChartConfig = {
 } satisfies ChartConfig;
 
 type RangePreset = "all" | "30d" | "90d" | "180d" | "custom";
+type AnalyticsDateValue = string | Date | null | undefined;
 type AnalyticsFilters = {
   contractId?: string;
   status?: "DRAFT" | "FINALIZED" | "ARCHIVED";
@@ -83,7 +84,11 @@ function formatCurrency(value: number) {
   return currencyFormatter.format(value);
 }
 
-function toDateInputValue(date: Date | null | undefined) {
+function toDateValue(date: AnalyticsDateValue): Date | null {
+  return date ? new Date(date) : null;
+}
+
+function toDateInputValue(date: AnalyticsDateValue): string {
   return date ? new Date(date).toISOString().slice(0, 10) : "";
 }
 
@@ -200,8 +205,8 @@ export function OrganisationAnalytics({
     trpc.organisation.getAnalytics.queryOptions({ organisationId }),
   );
 
-  const fullRangeStart = baseAnalytics.poDateRange.min;
-  const fullRangeEnd = baseAnalytics.poDateRange.max;
+  const fullRangeStart = toDateValue(baseAnalytics.poDateRange.min);
+  const fullRangeEnd = toDateValue(baseAnalytics.poDateRange.max);
 
   useEffect(() => {
     if (rangePreset !== "custom") return;
