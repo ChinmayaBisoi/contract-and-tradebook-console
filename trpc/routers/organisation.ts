@@ -44,6 +44,9 @@ type OrganisationWithMembership = {
     status: OrganisationUserStatus;
   }[];
   _count?: { users: number };
+  contracts?: Array<{
+    total: number | { toString(): string };
+  }>;
 };
 
 type OrganisationRouterDb = {
@@ -144,7 +147,11 @@ function formatOrganisationBase(organisation: OrganisationWithMembership) {
 function formatOrganisationWithMembership(
   organisation: OrganisationWithMembership,
   includeActiveMemberCount: true,
-): ReturnType<typeof formatOrganisationBase> & { activeMemberCount: number };
+): ReturnType<typeof formatOrganisationBase> & {
+  activeMemberCount: number;
+  totalContractCount?: number;
+  totalContractValue?: number;
+};
 function formatOrganisationWithMembership(
   organisation: OrganisationWithMembership,
   includeActiveMemberCount?: false,
@@ -154,9 +161,29 @@ function formatOrganisationWithMembership(
   includeActiveMemberCount = false,
 ) {
   const result = formatOrganisationBase(organisation);
+  const includeContractTotals =
+    result.role === "OWNER" || result.role === "ADMIN";
 
   return includeActiveMemberCount
-    ? { ...result, activeMemberCount: organisation._count?.users ?? 0 }
+    ? {
+        ...result,
+        activeMemberCount: organisation._count?.users ?? 0,
+        ...(includeContractTotals
+          ? {
+              totalContractCount: organisation.contracts?.length ?? 0,
+              totalContractValue: (organisation.contracts ?? []).reduce(
+                (sum, contract) =>
+                  sum +
+                  Number(
+                    typeof contract.total === "number"
+                      ? contract.total
+                      : contract.total.toString(),
+                  ),
+                0,
+              ),
+            }
+          : {}),
+      }
     : result;
 }
 
@@ -581,6 +608,11 @@ export const organisationRouter = createTRPCRouter({
             users: {
               ...organisationSelect.users,
               where: { clerkUserId: ctx.auth.clerkUserId },
+            },
+            contracts: {
+              select: {
+                total: true,
+              },
             },
             _count: {
               select: { users: { where: { status: "ACTIVE" } } },

@@ -94,6 +94,7 @@ describe("tRPC setup", () => {
         updatedAt: createdAt,
         users: [{ role: "ADMIN", status: "ACTIVE" }],
         _count: { users: 4 },
+        contracts: [{ total: { toString: () => "12.25" } }, { total: { toString: () => "87.75" } }],
       },
     ]);
     const count = vi.fn().mockResolvedValue(13);
@@ -124,6 +125,8 @@ describe("tRPC setup", () => {
           role: "ADMIN",
           status: "ACTIVE",
           activeMemberCount: 4,
+          totalContractCount: 2,
+          totalContractValue: 100,
           createdAt,
           updatedAt: createdAt,
         },
@@ -137,14 +140,19 @@ describe("tRPC setup", () => {
         orderBy: { name: "asc" },
         where: {
           name: { contains: "operations", mode: "insensitive" },
-          users: {
-            some: {
-              clerkUserId: "user_admin",
-              role: "ADMIN",
-              status: "ACTIVE",
+            users: {
+              some: {
+                clerkUserId: "user_admin",
+                role: "ADMIN",
+                status: "ACTIVE",
+              },
             },
           },
-        },
+        select: expect.objectContaining({
+          contracts: {
+            select: { total: true },
+          },
+        }),
       }),
     );
   });
