@@ -20,8 +20,40 @@ aws ecs update-service \
   --force-new-deployment \
   >/dev/null
 
-aws ecs wait services-stable \
-  --cluster "${ECS_CLUSTER}" \
-  --services "${ECS_SERVICE}"
+deploy_timeout_seconds="${ECS_DEPLOY_TIMEOUT_SECONDS:-1800}"
+deploy_deadline=$((SECONDS + deploy_timeout_seconds))
 
-echo "Deployment completed with task definition ${task_definition_arn}"
+while ((SECONDS < deploy_deadline)); do
+  read -r deployment_count running_count desired_count pending_count rollout_state <<<"$(
+    aws ecs describe-services \
+      --cluster "${ECS_CLUSTER}" \
+      --services "${ECS_SERVICE}" \
+      --query 'services[0].[length(deployments),runningCount,desiredCount,pendingCount,deployments[0].rolloutState]' \
+      --output text
+  )"
+
+  echo "ECS rollout state=${rollout_state} deployments=${deployment_count} running=${running_count}/${desired_count} pending=${pending_count}"
+
+  if [[ "${rollout_state}" == "FAILED" ]]; then
+    echo "ECS deployment failed for task definition ${task_definition_arn}" >&2
+    exit 1
+  fi
+
+  if [[ "${rollout_state}" == "COMPLETED" \
+    && "${deployment_count}" == "1" \
+    && "${running_count}" == "${desired_count}" \
+    && "${pending_count}" == "0" ]]; then
+    echo "Deployment completed with task definition ${task_definition_arn}"
+    exit 0
+  fi
+
+  sleep 15
+done
+
+echo "Timed out waiting ${deploy_timeout_seconds}s for ECS deployment ${task_definition_arn}" >&2
+aws ecs describe-services \
+  --cluster "${ECS_CLUSTER}" \
+  --services "${ECS_SERVICE}" \
+  --query 'services[0].{deployments:deployments,events:events[0:10]}' \
+  --output json >&2
+exit 1
