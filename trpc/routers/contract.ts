@@ -10,6 +10,7 @@ import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
 } from "@/lib/organisation-access";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const contractListInput = z.object({
@@ -55,6 +56,11 @@ const contractUpdateInput = z.object({
   contract: contractInputSchema,
 });
 
+const contractDeleteInput = z.object({
+  organisationId: z.string().min(1),
+  id: z.string().min(1),
+});
+
 type ContractListRow = {
   id: string;
   clientName: string;
@@ -81,6 +87,7 @@ type ContractDb = {
     findFirst: (args: unknown) => Promise<ContractWithRelations | null>;
     create: (args: unknown) => Promise<ContractWithRelations>;
     update: (args: unknown) => Promise<ContractWithRelations>;
+    delete: (args: unknown) => Promise<unknown>;
   };
   auditEvent: {
     create: (args: {
@@ -333,7 +340,7 @@ export const contractRouter = createTRPCRouter({
       });
 
       try {
-        return await db.$transaction(async (tx) => {
+        const created = await db.$transaction(async (tx) => {
           const created = await tx.contract.create({
             data: {
               organisationId: input.organisationId,
@@ -382,6 +389,16 @@ export const contractRouter = createTRPCRouter({
             })),
           };
         });
+
+        publishRealtimeEvent({
+          entity: "contract",
+          action: "created",
+          entityId: created.id,
+          organisationId: input.organisationId,
+          contractId: created.id,
+        });
+
+        return created;
       } catch (error) {
         return mapWriteError(error);
       }
@@ -399,7 +416,7 @@ export const contractRouter = createTRPCRouter({
       });
 
       try {
-        return await db.$transaction(async (tx) => {
+        const updated = await db.$transaction(async (tx) => {
           const existing = await tx.contract.findFirst({
             where: { id: input.id, organisationId: input.organisationId },
             include: {
@@ -480,6 +497,85 @@ export const contractRouter = createTRPCRouter({
             })),
           };
         });
+
+        publishRealtimeEvent({
+          entity: "contract",
+          action: "updated",
+          entityId: updated.id,
+          organisationId: input.organisationId,
+          contractId: updated.id,
+        });
+
+        return updated;
+      } catch (error) {
+        return mapWriteError(error);
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(contractDeleteInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      const membership = await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:update",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+
+      try {
+        const deleted = await db.$transaction(async (tx) => {
+          const existing = await tx.contract.findFirst({
+            where: { id: input.id, organisationId: input.organisationId },
+            include: {
+              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+            },
+          });
+
+          if (!existing) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Contract was not found in this organisation.",
+            });
+          }
+
+          assertDraftContract(existing);
+
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "DELETE",
+            entityType: "CONTRACT",
+            entityId: existing.id,
+            entityLabel: existing.poRefNo,
+            contractId: existing.id,
+            beforeState: {
+              clientName: existing.clientName,
+              poRefNo: existing.poRefNo,
+              poDate: existing.poDate,
+              paymentTerms: existing.paymentTerms,
+              deliveryTerms: existing.deliveryTerms,
+            },
+          });
+
+          await tx.contract.delete({
+            where: { id: existing.id },
+          });
+
+          return { id: existing.id };
+        });
+
+        publishRealtimeEvent({
+          entity: "contract",
+          action: "deleted",
+          entityId: deleted.id,
+          organisationId: input.organisationId,
+          contractId: deleted.id,
+        });
+
+        return deleted;
       } catch (error) {
         return mapWriteError(error);
       }

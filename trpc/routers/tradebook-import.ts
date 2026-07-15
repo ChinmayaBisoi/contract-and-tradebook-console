@@ -11,7 +11,7 @@ import {
   suggestMappingsWithAi,
   type WorkbookMappingAnalysis,
 } from "@/lib/tradebook/mapping";
-import { publishTradebookEvent } from "@/lib/tradebook/events";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 import {
   type ParsedWorkbook,
   parseWorkbookBuffer,
@@ -222,6 +222,15 @@ export const tradebookImportRouter = createTRPCRouter({
         select: { id: true },
       });
 
+      publishRealtimeEvent({
+        entity: "upload",
+        action: "created",
+        entityId: upload.id,
+        organisationId: input.organisationId,
+        uploadId: upload.id,
+        status: "PENDING",
+      });
+
       return { uploadId: upload.id };
     }),
 
@@ -257,17 +266,11 @@ export const tradebookImportRouter = createTRPCRouter({
         });
       }
 
-      publishTradebookEvent({
-        type: "import.failed",
+      publishRealtimeEvent({
+        entity: "upload",
+        action: "updated",
         organisationId: input.organisationId,
-        importId: input.uploadId,
-        uploadId: input.uploadId,
-        status: "FAILED",
-      });
-      publishTradebookEvent({
-        type: "upload.updated",
-        organisationId: input.organisationId,
-        importId: input.uploadId,
+        entityId: input.uploadId,
         uploadId: input.uploadId,
         status: "FAILED",
       });
@@ -312,17 +315,11 @@ export const tradebookImportRouter = createTRPCRouter({
         });
       }
 
-      publishTradebookEvent({
-        type: "import.preparing",
+      publishRealtimeEvent({
+        entity: "upload",
+        action: "updated",
         organisationId: input.organisationId,
-        importId: record.id,
-        uploadId: record.uploadId,
-        status: "PROCESSING",
-      });
-      publishTradebookEvent({
-        type: "upload.updated",
-        organisationId: input.organisationId,
-        importId: record.id,
+        entityId: record.id,
         uploadId: record.uploadId,
         status: "PROCESSING",
       });
@@ -362,12 +359,13 @@ export const tradebookImportRouter = createTRPCRouter({
           where: { id: record.uploadId, organisationId: input.organisationId },
           data: { status: "PROCESSED", processedAt: preparedAt },
         });
-        publishTradebookEvent({
-          type: "upload.updated",
+        publishRealtimeEvent({
+          entity: "upload",
+          action: "updated",
           organisationId: input.organisationId,
-          importId: record.id,
+          entityId: record.id,
           uploadId: record.uploadId,
-          status: "PROCESSED",
+          status: "PREPARED",
         });
 
         return {
@@ -404,17 +402,11 @@ export const tradebookImportRouter = createTRPCRouter({
             },
           }),
         ]);
-        publishTradebookEvent({
-          type: "import.failed",
+        publishRealtimeEvent({
+          entity: "upload",
+          action: "updated",
           organisationId: input.organisationId,
-          importId: record.id,
-          uploadId: record.uploadId,
-          status: "FAILED",
-        });
-        publishTradebookEvent({
-          type: "upload.updated",
-          organisationId: input.organisationId,
-          importId: record.id,
+          entityId: record.id,
           uploadId: record.uploadId,
           status: "FAILED",
         });
@@ -663,10 +655,11 @@ export const tradebookImportRouter = createTRPCRouter({
         },
       });
       if (draft.errors.length === 0) {
-        publishTradebookEvent({
-          type: "import.mapped",
+        publishRealtimeEvent({
+          entity: "upload",
+          action: "updated",
           organisationId: input.organisationId,
-          importId: record.id,
+          entityId: record.id,
           uploadId: record.uploadId,
           status: "MAPPED",
         });
@@ -724,19 +717,13 @@ export const tradebookImportRouter = createTRPCRouter({
         actorRole: membership.role,
         draft,
       });
-      publishTradebookEvent({
-        type: "import.imported",
+      publishRealtimeEvent({
+        entity: "upload",
+        action: "updated",
         organisationId: input.organisationId,
-        importId: record.id,
+        entityId: record.id,
         uploadId: record.uploadId,
         status: "IMPORTED",
-      });
-      publishTradebookEvent({
-        type: "upload.updated",
-        organisationId: input.organisationId,
-        importId: record.id,
-        uploadId: record.uploadId,
-        status: "PROCESSED",
       });
       return result;
     }),

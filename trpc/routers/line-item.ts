@@ -11,6 +11,7 @@ import {
   createOrganisationMembershipFinder,
   type OrganisationMembership,
 } from "@/lib/organisation-access";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 const lineItemListInput = z.object({
@@ -54,6 +55,11 @@ const lineItemUpdateInput = z.object({
   lineItem: lineItemInputSchema,
 });
 
+const lineItemDeleteInput = z.object({
+  organisationId: z.string().min(1),
+  id: z.string().min(1),
+});
+
 type OperationsDb = {
   organisationUser: {
     findUnique: (args: unknown) => Promise<OrganisationMembership | null>;
@@ -68,6 +74,7 @@ type OperationsDb = {
     findFirst: (args: unknown) => Promise<LineItemResult | null>;
     create: (args: unknown) => Promise<LineItemResult>;
     update: (args: unknown) => Promise<LineItemResult>;
+    delete: (args: unknown) => Promise<unknown>;
   };
   auditEvent: {
     create: (args: {
@@ -376,7 +383,7 @@ export const lineItemRouter = createTRPCRouter({
       });
 
       try {
-        return await db.$transaction(async (tx) => {
+        const lineItem = await db.$transaction(async (tx) => {
           const contract = await tx.contract.findFirst({
             where: {
               id: input.contractId,
@@ -465,6 +472,16 @@ export const lineItemRouter = createTRPCRouter({
 
           return mapLineItem(lineItem);
         });
+
+        publishRealtimeEvent({
+          entity: "lineItem",
+          action: "created",
+          entityId: lineItem.id,
+          organisationId: input.organisationId,
+          contractId: lineItem.contract.id,
+        });
+
+        return lineItem;
       } catch (error) {
         return mapWriteError(error);
       }
@@ -482,7 +499,7 @@ export const lineItemRouter = createTRPCRouter({
       });
 
       try {
-        return await db.$transaction(async (tx) => {
+        const updated = await db.$transaction(async (tx) => {
           const existing = await tx.lineItem.findFirst({
             where: {
               id: input.id,
@@ -592,6 +609,119 @@ export const lineItemRouter = createTRPCRouter({
 
           return mapLineItem(updated);
         });
+
+        publishRealtimeEvent({
+          entity: "lineItem",
+          action: "updated",
+          entityId: updated.id,
+          organisationId: input.organisationId,
+          contractId: updated.contract.id,
+        });
+
+        return updated;
+      } catch (error) {
+        return mapWriteError(error);
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(lineItemDeleteInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as OperationsDb;
+      const membership = await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "line-item:update",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+
+      try {
+        const deleted = await db.$transaction(async (tx) => {
+          const existing = await tx.lineItem.findFirst({
+            where: {
+              id: input.id,
+              organisationId: input.organisationId,
+            },
+            include: {
+              upload: { select: { sourceType: true } },
+              contract: {
+                select: {
+                  id: true,
+                  poRefNo: true,
+                  clientName: true,
+                  sourceType: true,
+                  organisationId: true,
+                  status: true,
+                  poDate: true,
+                  paymentTerms: true,
+                  deliveryTerms: true,
+                },
+              },
+            },
+          });
+
+          if (!existing) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Line item was not found in this organisation.",
+            });
+          }
+
+          assertDraftContract(existing.contract);
+
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "DELETE",
+            entityType: "LINE_ITEM",
+            entityId: existing.id,
+            entityLabel: existing.description,
+            contractId: existing.contract.id,
+            lineItemId: existing.id,
+            beforeState: {
+              description: existing.description,
+              quantity: existing.quantity.toString(),
+              quantityUnit: existing.quantityUnit,
+              unitPrice: existing.unitPrice.toString(),
+              pricingUnit: existing.pricingUnit,
+              total: existing.total?.toString() ?? null,
+            },
+          });
+
+          await tx.lineItem.delete({
+            where: { id: existing.id },
+          });
+
+          const contractAfterDelete = await tx.contract.findFirst({
+            where: {
+              id: existing.contract.id,
+              organisationId: input.organisationId,
+            },
+            include: { lineItems: { orderBy: [{ sortOrder: "asc" }] } },
+          });
+
+          if (!contractAfterDelete) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Contract was not found in this organisation.",
+            });
+          }
+
+          await syncContractFieldData(tx, contractAfterDelete);
+
+          return { id: existing.id, contractId: existing.contract.id };
+        });
+
+        publishRealtimeEvent({
+          entity: "lineItem",
+          action: "deleted",
+          entityId: deleted.id,
+          organisationId: input.organisationId,
+          contractId: deleted.contractId,
+        });
+
+        return deleted;
       } catch (error) {
         return mapWriteError(error);
       }

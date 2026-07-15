@@ -10,6 +10,7 @@ import type {
   OrganisationAction,
   OrganisationUserRole,
 } from "@/lib/permissions";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 import {
   type AuthContext,
   createTRPCRouter,
@@ -179,6 +180,25 @@ async function checkPermission({
     action,
     findMembership: createOrganisationMembershipFinder(db),
   });
+}
+
+async function organisationAudienceUserIds(
+  db: OrganisationRouterDb,
+  organisationId: string,
+) {
+  const members = await db.organisationUser.findMany({
+    where: {
+      organisationId,
+      status: "ACTIVE",
+    },
+    select: {
+      clerkUserId: true,
+    },
+  });
+
+  return members
+    .map((member) => member.clerkUserId)
+    .filter((value): value is string => Boolean(value));
 }
 
 function isPrismaError(error: unknown, code: string) {
@@ -680,6 +700,14 @@ export const organisationRouter = createTRPCRouter({
         },
       });
 
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "created",
+        entityId: organisation.id,
+        organisationId: organisation.id,
+        userIds: [ctx.auth.clerkUserId],
+      });
+
       return formatOrganisationWithMembership(organisation);
     }),
 
@@ -717,6 +745,14 @@ export const organisationRouter = createTRPCRouter({
         },
       });
 
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "updated",
+        entityId: organisation.id,
+        organisationId: organisation.id,
+        userIds: await organisationAudienceUserIds(db, organisation.id),
+      });
+
       return formatOrganisationWithMembership(organisation);
     }),
 
@@ -731,8 +767,18 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:delete",
       });
 
+      const userIds = await organisationAudienceUserIds(db, input.id);
+
       await db.organisation.delete({
         where: { id: input.id },
+      });
+
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "deleted",
+        entityId: input.id,
+        organisationId: input.id,
+        userIds,
       });
 
       return { id: input.id };
@@ -753,7 +799,7 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:user:remove",
       });
 
-      return mutateOrganisationMember({
+      const updatedMembership = await mutateOrganisationMember({
         db,
         actor: ctx.auth,
         requesterRole: requester.role,
@@ -767,6 +813,16 @@ export const organisationRouter = createTRPCRouter({
           statusChangedAt: new Date(),
         }),
       });
+
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "updated",
+        entityId: input.organisationId,
+        organisationId: input.organisationId,
+        userIds: [input.clerkUserId],
+      });
+
+      return updatedMembership;
     }),
 
   updateMemberRole: protectedProcedure
@@ -786,7 +842,7 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:user:update",
       });
 
-      return mutateOrganisationMember({
+      const updatedMembership = await mutateOrganisationMember({
         db,
         actor: ctx.auth,
         requesterRole: requester.role,
@@ -796,6 +852,16 @@ export const organisationRouter = createTRPCRouter({
         auditAction: "ROLE_CHANGE",
         getData: () => ({ role: input.role }),
       });
+
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "updated",
+        entityId: input.organisationId,
+        organisationId: input.organisationId,
+        userIds: [input.clerkUserId],
+      });
+
+      return updatedMembership;
     }),
 
   updateMemberStatus: protectedProcedure
@@ -814,7 +880,7 @@ export const organisationRouter = createTRPCRouter({
         action: "organisation:user:status:update",
       });
 
-      return mutateOrganisationMember({
+      const updatedMembership = await mutateOrganisationMember({
         db,
         actor: ctx.auth,
         requesterRole: requester.role,
@@ -827,5 +893,15 @@ export const organisationRouter = createTRPCRouter({
           statusChangedAt: new Date(),
         }),
       });
+
+      publishRealtimeEvent({
+        entity: "organisation",
+        action: "updated",
+        entityId: input.organisationId,
+        organisationId: input.organisationId,
+        userIds: [input.clerkUserId],
+      });
+
+      return updatedMembership;
     }),
 });
