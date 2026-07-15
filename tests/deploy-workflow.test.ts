@@ -22,6 +22,9 @@ describe("deploy workflow", () => {
     expect(workflow).toContain("IMAGE_EXISTS");
     expect(workflow).toContain("Reusing existing immutable image");
     expect(deployScript).toContain("aws ecs update-service");
+    expect(deployScript).toContain("ECS_DEPLOY_TIMEOUT_SECONDS:-1800");
+    expect(deployScript).toContain("aws ecs describe-services");
+    expect(deployScript).not.toContain("aws ecs wait services-stable");
     expect(workflow).not.toContain("rsync -az");
     expect(workflow).not.toContain("EC2_HOST");
   });
