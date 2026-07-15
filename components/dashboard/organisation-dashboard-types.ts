@@ -46,6 +46,7 @@ export type OrganisationDashboardViewProps = DashboardQueryState & {
   invitations: InvitationRow[];
   pagination: Pagination;
   isLoading: boolean;
+  isFetching: boolean;
   error: string | null;
   mutationError: string | null;
   isMutating: boolean;

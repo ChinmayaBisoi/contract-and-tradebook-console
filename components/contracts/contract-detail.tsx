@@ -144,6 +144,9 @@ export function ContractDetail({
           <p className="text-sm text-muted-foreground">
             Source: {data.sourceType.replace("_", " ")}
           </p>
+          <p className="text-sm font-medium text-foreground">
+            Contract total: {number.format(Number(data.total))}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <EditContractDialog

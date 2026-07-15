@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NuqsTestingAdapter, type UrlUpdateEvent } from "nuqs/adapters/testing";
-import { type ReactNode, Suspense } from "react";
+import { type ReactNode } from "react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,7 +12,6 @@ import {
   OrganisationTeam,
   OrganisationTeamErrorBoundary,
 } from "@/components/organisation/team/organisation-team";
-import { OrganisationTeamSkeleton } from "@/components/organisation/team/organisation-team-skeleton";
 import { makeQueryClient } from "@/trpc/query-client";
 
 type OrganisationRole = "OWNER" | "ADMIN" | "MEMBER";
@@ -152,6 +151,7 @@ vi.mock("@/trpc/server", async () => {
     ),
     trpc: {
       organisation: {
+        get: { queryOptions: serverMocks.queryOptions },
         listMembers: { queryOptions: serverMocks.queryOptions },
       },
     },
@@ -185,9 +185,7 @@ function renderTeam({
     <QueryClientProvider client={queryClient}>
       <NuqsTestingAdapter searchParams={searchParams} onUrlUpdate={onUrlUpdate}>
         <OrganisationTeamErrorBoundary>
-          <Suspense fallback={<OrganisationTeamSkeleton />}>
-            <OrganisationTeam organisationId="org_1" />
-          </Suspense>
+          <OrganisationTeam organisationId="org_1" />
         </OrganisationTeamErrorBoundary>
       </NuqsTestingAdapter>
     </QueryClientProvider>,
@@ -239,7 +237,8 @@ describe("OrganisationTeam", () => {
   it("renders member details in a read-only table with a deterministic UTC date", async () => {
     renderTeam();
 
-    const table = await screen.findByRole("table", {
+    await screen.findByText("Taylor Member");
+    const table = screen.getByRole("table", {
       name: "Organisation members",
     });
     expect(within(table).getByText("Taylor Member")).toBeInTheDocument();
@@ -267,6 +266,16 @@ describe("OrganisationTeam", () => {
     await user.type(
       screen.getByRole("searchbox", { name: "Search members" }),
       "ops",
+    );
+    await waitFor(
+      () => {
+        expect(
+          updates.some((update) =>
+            update.searchParams.get("filters")?.includes("ops"),
+          ),
+        ).toBe(true);
+      },
+      { timeout: 1000 },
     );
     await user.selectOptions(
       screen.getByRole("combobox", { name: "Filter by role" }),
@@ -327,8 +336,15 @@ describe("OrganisationTeam", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the page-level team skeleton while the query is pending", async () => {
+  it("keeps filters and headers visible while the query is pending", async () => {
     state.memberQuery.mockReturnValue(new Promise(() => undefined));
+    state.organisationQuery.mockReturnValue(
+      Promise.resolve({
+        id: "org_1",
+        name: "Contract Operations",
+        role: "OWNER",
+      }),
+    );
     const page = await Page({
       params: Promise.resolve({ orgId: "org_1" }),
       searchParams: Promise.resolve({}),
@@ -341,7 +357,13 @@ describe("OrganisationTeam", () => {
     );
 
     expect(
-      screen.getByRole("status", { name: "Loading organisation team" }),
+      screen.getByRole("heading", { name: "Team", level: 2 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search members" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sort by name" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Taylor Member")).not.toBeInTheDocument();
   });

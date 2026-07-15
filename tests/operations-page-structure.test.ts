@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = path.resolve(__dirname, "..");
 const read = (file: string) => readFileSync(path.join(root, file), "utf8");
 
-describe("operations page Suspense structure", () => {
+describe("operations page query structure", () => {
   it.each([
     [
       "contracts",
@@ -27,24 +27,25 @@ describe("operations page Suspense structure", () => {
       "app/(protected)/org/[orgId]/audit-trail/page.tsx",
       "OrganisationAuditTrail",
     ],
-  ])("prefetches and suspends the %s fetching component", (_, file, component) => {
+  ])("prefetches the %s list query", (_, file, component) => {
     const source = read(file);
     expect(source).toContain("prefetchQuery");
     expect(source).toContain("<HydrateClient>");
-    expect(source).toMatch(/<Suspense\s+fallback=/);
     expect(source).toContain(`<${component}`);
+    expect(source).not.toMatch(/<Suspense\s+fallback=/);
   });
 
-  it("fetches inside the components wrapped by Suspense", () => {
-    expect(read("components/operations/contracts.tsx")).toContain(
-      "useSuspenseQuery",
-    );
-    expect(read("components/operations/line-items.tsx")).toContain(
-      "useSuspenseQuery",
-    );
-    expect(read("components/operations/audit-trail.tsx")).toContain(
-      "useSuspenseQuery",
-    );
+  it("loads operations tables with keepPreviousData", () => {
+    for (const file of [
+      "components/operations/contracts.tsx",
+      "components/operations/line-items.tsx",
+      "components/operations/audit-trail.tsx",
+    ]) {
+      const source = read(file);
+      expect(source).toContain("useQuery");
+      expect(source).toContain("keepPreviousData");
+      expect(source).toContain("DebouncedInput");
+    }
   });
 
   it("refreshes the audit trail after successful team mutations", () => {

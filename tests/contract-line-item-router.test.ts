@@ -54,6 +54,39 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
 }
 
 describe("contract and line item routers", () => {
+  it("returns derived contract totals on contract reads", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: "Net 30",
+      deliveryTerms: "FOB",
+      total: { toString: () => "240" },
+      fieldData: { total: 240, items: [] },
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+
+    await expect(
+      caller.contract.get({
+        organisationId: "org_1",
+        id: "contract_1",
+      }),
+    ).resolves.toMatchObject({
+      id: "contract_1",
+      total: "240",
+      fieldData: expect.objectContaining({ total: 240 }),
+    });
+  });
+
   it("rejects contract updates when contract is not draft", async () => {
     const { db, tx } = createDb({});
     tx.contract.findFirst.mockResolvedValue({
@@ -120,6 +153,7 @@ describe("contract and line item routers", () => {
       sourceType: "JSON",
       paymentTerms: "Net 30",
       deliveryTerms: "FOB",
+      total: { toString: () => "0" },
       fieldData: {},
       updatedAt: new Date("2026-07-01T00:00:00.000Z"),
       lineItems: [],
@@ -292,6 +326,14 @@ describe("contract and line item routers", () => {
         }),
       }),
     );
+    const syncCall = tx.contract.update.mock.calls.at(-1)?.[0] as {
+      data: {
+        total: { toString(): string };
+        fieldData: { total: number };
+      };
+    };
+    expect(syncCall.data.total.toString()).toBe("240");
+    expect(syncCall.data.fieldData).toMatchObject({ total: 240 });
   });
 
   it("deletes draft contracts and their dependent line items", async () => {
@@ -394,5 +436,13 @@ describe("contract and line item routers", () => {
         }),
       }),
     );
+    const syncCall = tx.contract.update.mock.calls.at(-1)?.[0] as {
+      data: {
+        total: { toString(): string };
+        fieldData: { total: number };
+      };
+    };
+    expect(syncCall.data.total.toString()).toBe("0");
+    expect(syncCall.data.fieldData).toMatchObject({ total: 0 });
   });
 });

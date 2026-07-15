@@ -1,15 +1,11 @@
 import { createLoader } from "nuqs/server";
-import { Suspense } from "react";
 
 import { OrganisationContracts } from "@/components/operations/contracts";
 import {
   contractSearchParams,
   getContractListInput,
 } from "@/components/operations/search-params";
-import {
-  OperationsErrorBoundary,
-  OperationsTableSkeleton,
-} from "@/components/operations/table-states";
+import { OperationsErrorBoundary } from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
 const loadContractSearchParams = createLoader(contractSearchParams);
@@ -34,11 +30,7 @@ export default async function OrganisationContractsPage({
   return (
     <HydrateClient>
       <OperationsErrorBoundary>
-        <Suspense
-          fallback={<OperationsTableSkeleton title="Loading contracts" />}
-        >
-          <OrganisationContracts organisationId={orgId} />
-        </Suspense>
+        <OrganisationContracts organisationId={orgId} />
       </OperationsErrorBoundary>
     </HydrateClient>
   );

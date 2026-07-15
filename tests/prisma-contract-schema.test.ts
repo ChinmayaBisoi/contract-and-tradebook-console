@@ -82,6 +82,7 @@ describe("contract domain Prisma schema", () => {
     expect(contract).toMatch(/clientName\s+String/);
     expect(contract).toMatch(/poRefNo\s+String/);
     expect(contract).toMatch(/poDate\s+DateTime/);
+    expect(contract).toMatch(/total\s+Decimal\s+@default\(0\)/);
     expect(contract).toMatch(/fieldData\s+Json/);
     expect(contract).toMatch(/lineItems\s+LineItem\[\]/);
     expect(contract).toContain("@@unique([organisationId, poRefNo])");

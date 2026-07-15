@@ -1,11 +1,9 @@
 import { createLoader } from "nuqs/server";
-import { Suspense } from "react";
 
 import {
   OrganisationTeam,
   OrganisationTeamErrorBoundary,
 } from "@/components/organisation/team/organisation-team";
-import { OrganisationTeamSkeleton } from "@/components/organisation/team/organisation-team-skeleton";
 import {
   getTeamMemberFilters,
   teamSearchParams,
@@ -27,23 +25,26 @@ export default async function OrganisationTeamsPage({
   ]);
   const queryClient = getQueryClient();
 
-  void queryClient.prefetchQuery(
-    trpc.organisation.listMembers.queryOptions({
-      organisationId: orgId,
-      filters: getTeamMemberFilters(queryState.filters),
-      page: queryState.page,
-      pageSize: queryState.pageSize,
-      sort: queryState.sort,
-      sortDirection: queryState.sortDirection,
-    }),
-  );
+  void Promise.all([
+    queryClient.prefetchQuery(
+      trpc.organisation.get.queryOptions({ id: orgId }),
+    ),
+    queryClient.prefetchQuery(
+      trpc.organisation.listMembers.queryOptions({
+        organisationId: orgId,
+        filters: getTeamMemberFilters(queryState.filters),
+        page: queryState.page,
+        pageSize: queryState.pageSize,
+        sort: queryState.sort,
+        sortDirection: queryState.sortDirection,
+      }),
+    ),
+  ]);
 
   return (
     <HydrateClient>
       <OrganisationTeamErrorBoundary>
-        <Suspense fallback={<OrganisationTeamSkeleton />}>
-          <OrganisationTeam organisationId={orgId} />
-        </Suspense>
+        <OrganisationTeam organisationId={orgId} />
       </OrganisationTeamErrorBoundary>
     </HydrateClient>
   );

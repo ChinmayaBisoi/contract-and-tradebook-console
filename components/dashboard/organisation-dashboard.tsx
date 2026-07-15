@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -38,54 +38,52 @@ export function OrganisationDashboard() {
   const directionFilter = filterValue(queryState.filters, "direction");
   const statusFilter = filterValue(queryState.filters, "status");
 
-  const organisationQuery = useQuery(
-    trpc.organisation.list.queryOptions(
-      {
-        filters: {
-          ...(search ? { search } : {}),
-          ...(roleFilter === "OWNER" ||
-          roleFilter === "ADMIN" ||
-          roleFilter === "MEMBER"
-            ? { role: roleFilter }
-            : {}),
-        },
-        page: queryState.page,
-        pageSize: queryState.pageSize as 10 | 20 | 50,
-        sort: queryState.sort === "name" ? "name" : "createdAt",
-        sortDirection: queryState.sortDirection ?? "desc",
+  const organisationQuery = useQuery({
+    ...trpc.organisation.list.queryOptions({
+      filters: {
+        ...(search ? { search } : {}),
+        ...(roleFilter === "OWNER" ||
+        roleFilter === "ADMIN" ||
+        roleFilter === "MEMBER"
+          ? { role: roleFilter }
+          : {}),
       },
-      { enabled: queryState.tab === "organisations" },
-    ),
-  );
+      page: queryState.page,
+      pageSize: queryState.pageSize as 10 | 20 | 50,
+      sort: queryState.sort === "name" ? "name" : "createdAt",
+      sortDirection: queryState.sortDirection ?? "desc",
+    }),
+    enabled: queryState.tab === "organisations",
+    placeholderData: keepPreviousData,
+  });
 
-  const invitationQuery = useQuery(
-    trpc.invitation.list.queryOptions(
-      {
-        filters: {
-          direction:
-            directionFilter === "received" || directionFilter === "managed"
-              ? directionFilter
-              : "all",
-          ...(search ? { search } : {}),
-          ...(statusFilter === "PENDING" ||
-          statusFilter === "ACCEPTED" ||
-          statusFilter === "DECLINED" ||
-          statusFilter === "EXPIRED" ||
-          statusFilter === "CANCELLED"
-            ? { status: statusFilter }
-            : {}),
-        },
-        page: queryState.page,
-        pageSize: queryState.pageSize as 10 | 20 | 50,
-        sort:
-          queryState.sort === "email" || queryState.sort === "expiresAt"
-            ? queryState.sort
-            : "createdAt",
-        sortDirection: queryState.sortDirection ?? "desc",
+  const invitationQuery = useQuery({
+    ...trpc.invitation.list.queryOptions({
+      filters: {
+        direction:
+          directionFilter === "received" || directionFilter === "managed"
+            ? directionFilter
+            : "all",
+        ...(search ? { search } : {}),
+        ...(statusFilter === "PENDING" ||
+        statusFilter === "ACCEPTED" ||
+        statusFilter === "DECLINED" ||
+        statusFilter === "EXPIRED" ||
+        statusFilter === "CANCELLED"
+          ? { status: statusFilter }
+          : {}),
       },
-      { enabled: queryState.tab === "invitations" },
-    ),
-  );
+      page: queryState.page,
+      pageSize: queryState.pageSize as 10 | 20 | 50,
+      sort:
+        queryState.sort === "email" || queryState.sort === "expiresAt"
+          ? queryState.sort
+          : "createdAt",
+      sortDirection: queryState.sortDirection ?? "desc",
+    }),
+    enabled: queryState.tab === "invitations",
+    placeholderData: keepPreviousData,
+  });
 
   const createOrganisation = useMutation(
     trpc.organisation.create.mutationOptions(),
@@ -172,6 +170,7 @@ export function OrganisationDashboard() {
       invitations={invitationQuery.data?.data ?? []}
       pagination={pagination}
       isLoading={activeQuery.isLoading}
+      isFetching={activeQuery.isFetching}
       error={activeQuery.error ? errorMessage(activeQuery.error) : null}
       mutationError={mutationError}
       isMutating={isMutating}

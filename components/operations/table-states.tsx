@@ -8,7 +8,7 @@ import {
   DatabaseIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { Component } from "react";
+import { Component, type ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,22 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TableBody, TableCell, TableRow } from "@/components/ui/table";
 
 const skeletonRows = ["one", "two", "three", "four", "five", "six", "seven"];
+
+export function toggleSortDirection<T extends string>(
+  currentSort: T,
+  currentDirection: "asc" | "desc",
+  column: T,
+  defaultDirection: "asc" | "desc" = "asc",
+): "asc" | "desc" {
+  if (currentSort === column) {
+    return currentDirection === "asc" ? "desc" : "asc";
+  }
+
+  return defaultDirection;
+}
 
 function OperationsError({ onRetry }: { onRetry: () => void }) {
   return (
@@ -131,6 +145,61 @@ export function TableEmptyState({
   );
 }
 
+export function TableSkeletonRows({
+  rows = 7,
+  columns = 6,
+}: {
+  rows?: number;
+  columns?: number;
+}) {
+  return (
+    <>
+      {skeletonRows.slice(0, rows).map((row) => (
+        <TableRow key={row}>
+          {Array.from({ length: columns }, (_, index) => (
+            <TableCell key={`${row}-${index}`}>
+              <Skeleton className="h-5 w-full" />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
+  );
+}
+
+export function TableBodyLoadingState({
+  isLoading,
+  isFetching,
+  hasData,
+  rowCount = 7,
+  columnCount = 6,
+  children,
+}: {
+  isLoading: boolean;
+  isFetching: boolean;
+  hasData: boolean;
+  rowCount?: number;
+  columnCount?: number;
+  children: ReactNode;
+}) {
+  if (isLoading && !hasData) {
+    return (
+      <TableBody>
+        <TableSkeletonRows rows={rowCount} columns={columnCount} />
+      </TableBody>
+    );
+  }
+
+  return (
+    <TableBody
+      aria-busy={isFetching || undefined}
+      className={isFetching ? "opacity-60 transition-opacity" : undefined}
+    >
+      {children}
+    </TableBody>
+  );
+}
+
 export function SortButton<T extends string>({
   label,
   column,
@@ -158,6 +227,9 @@ export function SortButton<T extends string>({
       className="-ml-2"
       onClick={() => onSort(column)}
       aria-label={`Sort by ${label.toLowerCase()}`}
+      aria-sort={
+        active ? (direction === "asc" ? "ascending" : "descending") : "none"
+      }
     >
       <span>{label}</span>
       <Icon aria-hidden="true" />

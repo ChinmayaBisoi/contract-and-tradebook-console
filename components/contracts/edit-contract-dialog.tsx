@@ -29,6 +29,7 @@ type EditableContract = {
   poDate: Date;
   paymentTerms: string | null;
   deliveryTerms: string | null;
+  total: string;
   status: "DRAFT" | "FINALIZED" | "ARCHIVED";
 };
 
@@ -134,6 +135,17 @@ export function EditContractDialog({
               type="date"
               defaultValue={contract.poDate.toISOString().slice(0, 10)}
               required
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="edit-contract-total">
+              Derived contract total
+            </FieldLabel>
+            <Input
+              id="edit-contract-total"
+              value={contract.total}
+              readOnly
+              aria-readonly="true"
             />
           </Field>
           <Field>

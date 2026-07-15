@@ -1,15 +1,11 @@
 import { createLoader } from "nuqs/server";
-import { Suspense } from "react";
 
 import { OrganisationLineItems } from "@/components/operations/line-items";
 import {
   getLineItemListInput,
   lineItemSearchParams,
 } from "@/components/operations/search-params";
-import {
-  OperationsErrorBoundary,
-  OperationsTableSkeleton,
-} from "@/components/operations/table-states";
+import { OperationsErrorBoundary } from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
 const loadLineItemSearchParams = createLoader(lineItemSearchParams);
@@ -36,11 +32,7 @@ export default async function OrganisationLineItemsPage({
   return (
     <HydrateClient>
       <OperationsErrorBoundary>
-        <Suspense
-          fallback={<OperationsTableSkeleton title="Loading line items" />}
-        >
-          <OrganisationLineItems organisationId={orgId} />
-        </Suspense>
+        <OrganisationLineItems organisationId={orgId} />
       </OperationsErrorBoundary>
     </HydrateClient>
   );

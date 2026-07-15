@@ -1,12 +1,13 @@
 "use client";
 
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLinkIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 
 import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
+import { DebouncedInput } from "@/components/filters/debounced-input";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   contractSearchParams,
@@ -15,7 +16,9 @@ import {
 import {
   OperationsPagination,
   SortButton,
+  TableBodyLoadingState,
   TableEmptyState,
+  toggleSortDirection,
 } from "@/components/operations/table-states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,6 @@ import {
 } from "@/components/ui/native-select";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -62,7 +64,10 @@ export function OrganisationContracts({
     startTransition,
   });
   const input = getContractListInput(organisationId, state);
-  const { data } = useSuspenseQuery(trpc.contract.list.queryOptions(input));
+  const { data, isLoading, isFetching } = useQuery({
+    ...trpc.contract.list.queryOptions(input),
+    placeholderData: keepPreviousData,
+  });
   useOrganisationEvents({
     organisationId,
     onEvent: async (event) => {
@@ -86,9 +91,17 @@ export function OrganisationContracts({
   const sort = (column: typeof state.sort) =>
     update({
       sort: column,
-      direction:
-        state.sort === column && state.direction === "asc" ? "desc" : "asc",
+      direction: toggleSortDirection(state.sort, state.direction, column),
     });
+  const facets = data?.facets ?? { statuses: [], sourceTypes: [] };
+  const pagination = data?.pagination ?? {
+    page: state.page,
+    pageSize: state.pageSize,
+    total: 0,
+    pageCount: 0,
+  };
+  const rows = data?.data ?? [];
+  const showEmpty = !isLoading && rows.length === 0;
 
   return (
     <section aria-labelledby="contracts-title" className="space-y-4">
@@ -109,12 +122,12 @@ export function OrganisationContracts({
         </div>
         <div className="flex items-center gap-3">
           <p className="text-sm tabular-nums text-muted-foreground">
-            {data.pagination.total} contracts
+            {pagination.total} contracts
           </p>
           <CreateContractDialog organisationId={organisationId} />
         </div>
       </div>
-      <Card aria-busy={pending}>
+      <Card aria-busy={pending || isFetching}>
         <CardHeader className="grid gap-3 border-b md:grid-cols-2 xl:grid-cols-6">
           <label htmlFor="contract-search" className="relative md:col-span-2">
             <span className="sr-only">Search contracts</span>
@@ -122,13 +135,13 @@ export function OrganisationContracts({
               className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
+            <DebouncedInput
               id="contract-search"
               aria-label="Search contracts"
               placeholder="Search client or PO reference"
               value={state.q}
               className="pl-9"
-              onChange={(e) => update({ q: e.target.value })}
+              onCommit={(q) => update({ q })}
             />
           </label>
           <NativeSelect
@@ -141,7 +154,7 @@ export function OrganisationContracts({
             }
           >
             <NativeSelectOption value="">All statuses</NativeSelectOption>
-            {data.facets.statuses.map((value) => (
+            {facets.statuses.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {statusLabels[value]}
               </NativeSelectOption>
@@ -157,7 +170,7 @@ export function OrganisationContracts({
             }
           >
             <NativeSelectOption value="">All sources</NativeSelectOption>
-            {data.facets.sourceTypes.map((value) => (
+            {facets.sourceTypes.map((value) => (
               <NativeSelectOption key={value} value={value}>
                 {value.replace("_", " ")}
               </NativeSelectOption>
@@ -198,7 +211,7 @@ export function OrganisationContracts({
           </div>
         </CardHeader>
         <CardContent className="px-0">
-          {data.data.length === 0 ? (
+          {showEmpty ? (
             <TableEmptyState filtered={filtered} noun="contracts" />
           ) : (
             <div className="overflow-x-auto">
@@ -277,8 +290,14 @@ export function OrganisationContracts({
                     </TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {data.data.map((row) => (
+                <TableBodyLoadingState
+                  isLoading={isLoading}
+                  isFetching={isFetching}
+                  hasData={Boolean(data)}
+                  rowCount={state.pageSize}
+                  columnCount={10}
+                >
+                  {rows.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-xs font-semibold">
                         {row.poRefNo}
@@ -325,12 +344,12 @@ export function OrganisationContracts({
                       </TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
+                </TableBodyLoadingState>
               </Table>
             </div>
           )}
           <OperationsPagination
-            {...data.pagination}
+            {...pagination}
             onPage={(page) => update({ page })}
             onPageSize={(pageSize) => update({ pageSize })}
           />

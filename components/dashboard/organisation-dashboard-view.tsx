@@ -9,9 +9,15 @@ import type {
   OrganisationRow,
 } from "@/components/dashboard/organisation-dashboard-types";
 import { TablePagination } from "@/components/dashboard/table-pagination";
+import { DebouncedInput } from "@/components/filters/debounced-input";
 import { CreateInvitationDialog } from "@/components/invitations/create-invitation-dialog";
 import { EditInvitationDialog } from "@/components/invitations/edit-invitation-dialog";
 import { CreateOrganisationDialog } from "@/components/organisations/create-organisation-dialog";
+import {
+  SortButton,
+  TableBodyLoadingState,
+  toggleSortDirection,
+} from "@/components/operations/table-states";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -21,14 +27,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -58,48 +62,38 @@ function getFilter(
   return filters.find((filter) => filter.id === id)?.value ?? "";
 }
 
-function TableState({
-  isLoading,
+function getOrgSort(sort: string | null): "name" | "createdAt" {
+  return sort === "name" ? "name" : "createdAt";
+}
+
+function getInvitationSort(
+  sort: string | null,
+): "createdAt" | "email" | "expiresAt" {
+  if (sort === "email" || sort === "expiresAt") {
+    return sort;
+  }
+
+  return "createdAt";
+}
+
+function TableErrorState({
   error,
-  empty,
-  loadingLabel,
   onRetry,
-  children,
 }: {
-  isLoading: boolean;
-  error: string | null;
-  empty: boolean;
-  loadingLabel: string;
+  error: string;
   onRetry: () => void;
-  children: React.ReactNode;
 }) {
-  if (isLoading) {
-    return (
-      <div className="p-10 text-center text-muted-foreground">
-        {loadingLabel}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="grid justify-items-center gap-3 p-10 text-center"
-      >
-        <p className="text-sm text-destructive">{error}</p>
-        <Button variant="outline" onClick={onRetry}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  if (empty) {
-    return <>{children}</>;
-  }
-
-  return <>{children}</>;
+  return (
+    <div
+      role="alert"
+      className="grid justify-items-center gap-3 p-10 text-center"
+    >
+      <p className="text-sm text-destructive">{error}</p>
+      <Button variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
 }
 
 function OrganisationTable({
@@ -126,51 +120,63 @@ function OrganisationTable({
     );
   }
 
+  const activeSort = getOrgSort(props.sort);
+  const activeDirection = props.sortDirection ?? "desc";
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
+            <SortButton
+              label="Organisation"
+              column="name"
+              sort={activeSort}
+              direction={activeDirection}
+              onSort={(column) =>
                 props.onQueryChange({
-                  sort: "name",
-                  sortDirection:
-                    props.sort === "name" && props.sortDirection === "asc"
-                      ? "desc"
-                      : "asc",
+                  sort: column,
+                  sortDirection: toggleSortDirection(
+                    activeSort,
+                    activeDirection,
+                    column,
+                  ),
                 })
               }
-            >
-              Organisation
-            </Button>
+            />
           </TableHead>
           <TableHead>Description</TableHead>
           <TableHead>Role</TableHead>
           <TableHead>Members</TableHead>
           <TableHead>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
+            <SortButton
+              label="Created"
+              column="createdAt"
+              sort={activeSort}
+              direction={activeDirection}
+              onSort={(column) =>
                 props.onQueryChange({
-                  sort: "createdAt",
-                  sortDirection:
-                    props.sort === "createdAt" && props.sortDirection === "desc"
-                      ? "asc"
-                      : "desc",
+                  sort: column,
+                  sortDirection: toggleSortDirection(
+                    activeSort,
+                    activeDirection,
+                    column,
+                    "desc",
+                  ),
                 })
               }
-            >
-              Created
-            </Button>
+            />
           </TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody>
+      <TableBodyLoadingState
+        isLoading={props.isLoading}
+        isFetching={props.isFetching}
+        hasData={!props.isLoading || rows.length > 0}
+        rowCount={props.pageSize}
+        columnCount={6}
+      >
         {rows.map((row) => (
           <TableRow key={row.id}>
             <TableCell className="font-medium">{row.name}</TableCell>
@@ -204,7 +210,7 @@ function OrganisationTable({
             </TableCell>
           </TableRow>
         ))}
-      </TableBody>
+      </TableBodyLoadingState>
     </Table>
   );
 }
@@ -280,21 +286,65 @@ function InvitationsTable({
     );
   }
 
+  const activeSort = getInvitationSort(props.sort);
+  const activeDirection = props.sortDirection ?? "desc";
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>Direction</TableHead>
           <TableHead>Organisation</TableHead>
-          <TableHead>Email</TableHead>
+          <TableHead>
+            <SortButton
+              label="Email"
+              column="email"
+              sort={activeSort}
+              direction={activeDirection}
+              onSort={(column) =>
+                props.onQueryChange({
+                  sort: column,
+                  sortDirection: toggleSortDirection(
+                    activeSort,
+                    activeDirection,
+                    column,
+                  ),
+                })
+              }
+            />
+          </TableHead>
           <TableHead>Role</TableHead>
           <TableHead>Invited by</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead>Expires</TableHead>
+          <TableHead>
+            <SortButton
+              label="Expires"
+              column="expiresAt"
+              sort={activeSort}
+              direction={activeDirection}
+              onSort={(column) =>
+                props.onQueryChange({
+                  sort: column,
+                  sortDirection: toggleSortDirection(
+                    activeSort,
+                    activeDirection,
+                    column,
+                    "desc",
+                  ),
+                })
+              }
+            />
+          </TableHead>
           <TableHead className="text-right">Actions</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody>
+      <TableBodyLoadingState
+        isLoading={props.isLoading}
+        isFetching={props.isFetching}
+        hasData={!props.isLoading || rows.length > 0}
+        rowCount={props.pageSize}
+        columnCount={8}
+      >
         {rows.map((row) => (
           <TableRow key={row.id}>
             <TableCell>
@@ -323,7 +373,7 @@ function InvitationsTable({
             </TableCell>
           </TableRow>
         ))}
-      </TableBody>
+      </TableBodyLoadingState>
     </Table>
   );
 }
@@ -335,18 +385,16 @@ function Filters({ props }: { props: OrganisationDashboardViewProps }) {
     <div className="flex flex-col gap-3 border-b bg-muted/20 p-4 sm:flex-row sm:items-center">
       <div className="relative max-w-sm flex-1">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
+        <DebouncedInput
           aria-label={`Search ${props.activeTab}`}
           className="pl-8"
           value={getFilter(props.filters, "search")}
           placeholder={`Search ${props.activeTab}`}
-          onChange={(event) =>
+          onCommit={(value) =>
             props.onQueryChange({
               filters: [
                 ...props.filters.filter((filter) => filter.id !== "search"),
-                ...(event.target.value
-                  ? [{ id: "search", value: event.target.value }]
-                  : []),
+                ...(value ? [{ id: "search", value }] : []),
               ],
             })
           }
@@ -411,18 +459,17 @@ export function OrganisationDashboardView(
         </TabsList>
       </div>
       <TabsContent value="organisations" className="px-4 pb-6 lg:px-6">
-        <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
+        <div
+          className="overflow-hidden rounded-xl border bg-card shadow-xs"
+          aria-busy={props.isFetching || undefined}
+        >
           <Filters props={props} />
-          <TableState
-            isLoading={props.isLoading}
-            error={props.error}
-            empty={props.organisations.length === 0}
-            loadingLabel="Loading organisations..."
-            onRetry={props.onRetry}
-          >
+          {props.error ? (
+            <TableErrorState error={props.error} onRetry={props.onRetry} />
+          ) : (
             <OrganisationTable rows={props.organisations} props={props} />
-          </TableState>
-          {!props.isLoading && !props.error && (
+          )}
+          {!props.error && (
             <TablePagination
               pagination={props.pagination}
               onPageChange={(page) => props.onQueryChange({ page })}
@@ -432,18 +479,17 @@ export function OrganisationDashboardView(
         </div>
       </TabsContent>
       <TabsContent value="invitations" className="px-4 pb-6 lg:px-6">
-        <div className="overflow-hidden rounded-xl border bg-card shadow-xs">
+        <div
+          className="overflow-hidden rounded-xl border bg-card shadow-xs"
+          aria-busy={props.isFetching || undefined}
+        >
           <Filters props={props} />
-          <TableState
-            isLoading={props.isLoading}
-            error={props.error}
-            empty={props.invitations.length === 0}
-            loadingLabel="Loading invitations..."
-            onRetry={props.onRetry}
-          >
+          {props.error ? (
+            <TableErrorState error={props.error} onRetry={props.onRetry} />
+          ) : (
             <InvitationsTable rows={props.invitations} props={props} />
-          </TableState>
-          {!props.isLoading && !props.error && (
+          )}
+          {!props.error && (
             <TablePagination
               pagination={props.pagination}
               onPageChange={(page) => props.onQueryChange({ page })}

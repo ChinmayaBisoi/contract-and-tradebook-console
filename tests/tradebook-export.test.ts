@@ -48,12 +48,17 @@ describe("tradebook workbook export", () => {
     const quantityCell = lineItems.getCell("D2");
     const totalCell = lineItems.getCell("H2");
     const summaryCountCell = summary.getCell("H2");
+    const summaryTotalCell = summary.getCell("I2");
 
     expect(quantityCell.value).toBe(2);
     expect(totalCell.value).toEqual({ formula: "D2*F2", result: 20 });
     expect(summaryCountCell.value).toEqual({
       formula: "COUNTIF('Line Items'!$B$2:$B$3451,C2)",
       result: 51,
+    });
+    expect(summaryTotalCell.value).toEqual({
+      formula: "SUMIF('Line Items'!$B$2:$B$3451,C2,'Line Items'!$H$2:$H$3451)",
+      result: 32877534.4,
     });
   });
 

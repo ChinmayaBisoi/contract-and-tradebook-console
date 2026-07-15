@@ -1,21 +1,18 @@
 "use client";
 
-import {
-  ArrowDownIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  SearchXIcon,
-} from "lucide-react";
+import { SearchXIcon } from "lucide-react";
 import { MemberActions } from "@/components/organisation/team/member-actions";
+import {
+  SortButton,
+  TableBodyLoadingState,
+} from "@/components/operations/table-states";
 import type {
   TeamSort,
   TeamSortDirection,
 } from "@/components/organisation/team/team-search-params";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
-  TableBody,
   TableCell,
   TableHead,
   TableHeader,
@@ -50,41 +47,6 @@ const statusLabels = {
   REMOVED: "Removed",
 };
 
-function SortButton({
-  label,
-  column,
-  sort,
-  sortDirection,
-  onSort,
-}: {
-  label: string;
-  column: TeamSort;
-  sort: TeamSort;
-  sortDirection: TeamSortDirection;
-  onSort: (sort: TeamSort) => void;
-}) {
-  const isActive = sort === column;
-  const Icon = isActive
-    ? sortDirection === "asc"
-      ? ArrowUpIcon
-      : ArrowDownIcon
-    : ArrowUpDownIcon;
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      className="-ml-2"
-      aria-label={`Sort by ${label.toLowerCase()}`}
-      onClick={() => onSort(column)}
-    >
-      {label}
-      <Icon aria-hidden="true" />
-    </Button>
-  );
-}
-
 export function OrganisationTeamTable({
   members,
   requesterRole,
@@ -92,6 +54,9 @@ export function OrganisationTeamTable({
   hasFilters,
   sort,
   sortDirection,
+  isLoading,
+  isFetching,
+  hasData,
   onSort,
   onChangeRole,
   onChangeStatus,
@@ -103,6 +68,9 @@ export function OrganisationTeamTable({
   hasFilters: boolean;
   sort: TeamSort;
   sortDirection: TeamSortDirection;
+  isLoading: boolean;
+  isFetching: boolean;
+  hasData: boolean;
   onSort: (sort: TeamSort) => void;
   onChangeRole: (
     member: OrganisationTeamMember,
@@ -114,7 +82,9 @@ export function OrganisationTeamTable({
   ) => Promise<boolean>;
   onRemove: (member: OrganisationTeamMember) => Promise<boolean>;
 }) {
-  if (members.length === 0) {
+  const showEmpty = !isLoading && members.length === 0;
+
+  if (showEmpty) {
     return (
       <div className="flex min-h-64 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
         <div className="rounded-full bg-muted p-3 text-muted-foreground">
@@ -146,6 +116,7 @@ export function OrganisationTeamTable({
             (requesterRole === "ADMIN" && member.role === "MEMBER"))) ||
         (requesterRole === "OWNER" && member.canRemove),
     );
+  const columnCount = hasActions ? 6 : 5;
 
   return (
     <Table aria-label="Organisation members">
@@ -156,7 +127,7 @@ export function OrganisationTeamTable({
               label="Name"
               column="clerkUserName"
               sort={sort}
-              sortDirection={sortDirection}
+              direction={sortDirection}
               onSort={onSort}
             />
           </TableHead>
@@ -166,7 +137,7 @@ export function OrganisationTeamTable({
               label="Role"
               column="role"
               sort={sort}
-              sortDirection={sortDirection}
+              direction={sortDirection}
               onSort={onSort}
             />
           </TableHead>
@@ -175,7 +146,7 @@ export function OrganisationTeamTable({
               label="Status"
               column="status"
               sort={sort}
-              sortDirection={sortDirection}
+              direction={sortDirection}
               onSort={onSort}
             />
           </TableHead>
@@ -184,7 +155,7 @@ export function OrganisationTeamTable({
               label="Joined"
               column="createdAt"
               sort={sort}
-              sortDirection={sortDirection}
+              direction={sortDirection}
               onSort={onSort}
             />
           </TableHead>
@@ -193,7 +164,13 @@ export function OrganisationTeamTable({
           ) : null}
         </TableRow>
       </TableHeader>
-      <TableBody>
+      <TableBodyLoadingState
+        isLoading={isLoading}
+        isFetching={isFetching}
+        hasData={hasData}
+        rowCount={7}
+        columnCount={columnCount}
+      >
         {members.map((member) => {
           const joinedAt = new Date(member.createdAt);
 
@@ -238,7 +215,7 @@ export function OrganisationTeamTable({
             </TableRow>
           );
         })}
-      </TableBody>
+      </TableBodyLoadingState>
     </Table>
   );
 }
