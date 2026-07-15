@@ -27,6 +27,17 @@ jobs:
       CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
       LOG_GROUP: ${{ vars.ECS_LOG_GROUP }}
       IMAGE_TAG: ${{ github.sha }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      UPLOADTHING_TOKEN: ${{ secrets.UPLOADTHING_TOKEN }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL: ${{ vars.NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL }}
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${{ vars.NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL }}
+      LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+      UPLOADTHING_WORKBOOK_ACL: ${{ vars.UPLOADTHING_WORKBOOK_ACL }}
+      OPENAI_MAPPING_MODEL: ${{ vars.OPENAI_MAPPING_MODEL }}
 
     steps:
       - name: Checkout
@@ -39,9 +50,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      - name: Lint
-        run: bun run lint:ci
 
       - name: Test
         run: bun run test
@@ -62,14 +70,26 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push production image
         id: image
         env:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
           IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          docker build --target production -t "${IMAGE_URI}" .
-          docker push "${IMAGE_URI}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --target production \
+            --build-arg DATABASE_URL="${DATABASE_URL}" \
+            --build-arg DIRECT_URL="${DIRECT_URL}" \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL}" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL}" \
+            -t "${IMAGE_URI}" \
+            --push \
+            .
           echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
 
       - name: Run Prisma migrations

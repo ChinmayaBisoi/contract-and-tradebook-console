@@ -20,7 +20,7 @@ function activeMembership(role: "OWNER" | "ADMIN" | "MEMBER" = "OWNER") {
 const removedMembership = { role: "MEMBER", status: "REMOVED" } as const;
 
 describe("organisation details router", () => {
-  it("returns organisation analytics to active members using scoped counts", async () => {
+  it("returns organisation analytics and a filtered po-date contract timeline", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-15T12:00:00.000Z"));
     const createdAt = new Date("2026-07-01T00:00:00.000Z");
@@ -29,16 +29,66 @@ describe("organisation details router", () => {
       .mockResolvedValueOnce(6)
       .mockResolvedValueOnce(2);
     const invitationCount = vi.fn().mockResolvedValue(3);
+    const contractCount = vi.fn().mockResolvedValue(42);
+    const contractAggregate = vi.fn().mockResolvedValue({
+      _sum: { total: "4616187445.88" },
+      _min: { poDate: new Date("2026-01-01T00:00:00.000Z") },
+      _max: { poDate: new Date("2026-07-10T00:00:00.000Z") },
+    });
+    const contractFindMany = vi.fn().mockResolvedValue([
+      {
+        id: "contract_1",
+        poRefNo: "PO-001",
+        clientName: "Acme",
+      },
+      {
+        id: "contract_2",
+        poRefNo: "PO-002",
+        clientName: "Bravo",
+      },
+    ]);
+    const lineItemCount = vi.fn().mockResolvedValue(3450);
+    const lineItemAggregate = vi.fn().mockResolvedValue({
+      _avg: { total: "1338025.35" },
+      _max: { total: "42533341.17" },
+    });
+    const contractGroupBy = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { status: "DRAFT", _count: { _all: 14 } },
+        { status: "FINALIZED", _count: { _all: 14 } },
+        { status: "ARCHIVED", _count: { _all: 14 } },
+      ])
+      .mockResolvedValueOnce([
+        {
+          poDate: new Date("2026-07-01T00:00:00.000Z"),
+          _count: { _all: 2 },
+        },
+        {
+          poDate: new Date("2026-07-02T00:00:00.000Z"),
+          _count: { _all: 1 },
+        },
+      ]);
     const caller = createCaller(
       {
         organisation: {
           findUnique: vi.fn().mockResolvedValue({ createdAt }),
+        },
+        contract: {
+          count: contractCount,
+          aggregate: contractAggregate,
+          findMany: contractFindMany,
+          groupBy: contractGroupBy,
         },
         organisationUser: {
           findUnique: vi.fn().mockResolvedValue(activeMembership("MEMBER")),
           count: memberCount,
         },
         invitation: { count: invitationCount },
+        lineItem: {
+          count: lineItemCount,
+          aggregate: lineItemAggregate,
+        },
       },
       {
         clerkUserId: "member_1",
@@ -49,14 +99,40 @@ describe("organisation details router", () => {
 
     const result = await caller.organisation.getAnalytics({
       organisationId: "org_1",
+      filters: {
+        contractId: "contract_1",
+        status: "FINALIZED",
+        poDateFrom: new Date("2026-07-01T00:00:00.000Z"),
+        poDateTo: new Date("2026-07-10T00:00:00.000Z"),
+      },
     });
 
     expect(result).toMatchObject({
       activeMemberCount: 6,
       disabledMemberCount: 2,
       pendingInvitationCount: 3,
+      totalContracts: 42,
+      totalLineItems: 3450,
+      grandContractValue: 4616187445.88,
+      averageLineValue: 1338025.35,
+      largestLineValue: 42533341.17,
+      draftContracts: 14,
+      finalizedContracts: 14,
+      archivedContracts: 14,
+      poDateRange: {
+        min: new Date("2026-01-01T00:00:00.000Z"),
+        max: new Date("2026-07-10T00:00:00.000Z"),
+      },
       createdAt,
     });
+    expect(result.contractOptions).toEqual([
+      { id: "contract_1", label: "PO-001 - Acme" },
+      { id: "contract_2", label: "PO-002 - Bravo" },
+    ]);
+    expect(result.contractsOverTime).toEqual([
+      { date: "2026-07-01", contractCount: 2 },
+      { date: "2026-07-02", contractCount: 1 },
+    ]);
     expect(result.ageInDays).toBe(14);
     expect(memberCount).toHaveBeenNthCalledWith(1, {
       where: { organisationId: "org_1", status: "ACTIVE" },
@@ -70,6 +146,51 @@ describe("organisation details router", () => {
         status: "PENDING",
         expiresAt: { gt: expect.any(Date) },
       },
+    });
+    expect(contractCount).toHaveBeenCalledWith({
+      where: { organisationId: "org_1" },
+    });
+    expect(contractAggregate).toHaveBeenCalledWith({
+      where: { organisationId: "org_1" },
+      _sum: { total: true },
+      _min: { poDate: true },
+      _max: { poDate: true },
+    });
+    expect(contractFindMany).toHaveBeenCalledWith({
+      where: { organisationId: "org_1" },
+      orderBy: [{ poDate: "desc" }, { poRefNo: "asc" }],
+      select: {
+        id: true,
+        poRefNo: true,
+        clientName: true,
+      },
+    });
+    expect(lineItemCount).toHaveBeenCalledWith({
+      where: { organisationId: "org_1" },
+    });
+    expect(lineItemAggregate).toHaveBeenCalledWith({
+      where: { organisationId: "org_1", total: { not: null } },
+      _avg: { total: true },
+      _max: { total: true },
+    });
+    expect(contractGroupBy).toHaveBeenCalledWith({
+      by: ["status"],
+      where: { organisationId: "org_1" },
+      _count: { _all: true },
+    });
+    expect(contractGroupBy).toHaveBeenNthCalledWith(2, {
+      by: ["poDate"],
+      where: {
+        organisationId: "org_1",
+        id: "contract_1",
+        status: "FINALIZED",
+        poDate: {
+          gte: new Date("2026-07-01T00:00:00.000Z"),
+          lte: new Date("2026-07-10T00:00:00.000Z"),
+        },
+      },
+      _count: { _all: true },
+      orderBy: { poDate: "asc" },
     });
     vi.useRealTimers();
   });

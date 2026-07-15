@@ -5,6 +5,10 @@
 .git
 .gitignore
 .next
+.nx
+.agents
+.codex
+.DS_Store
 coverage
 docs/project-understanding.pdf
 Dockerfile

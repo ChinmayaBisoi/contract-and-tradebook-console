@@ -16,6 +16,8 @@ describe("draft contract line-item UI affordances", () => {
     expect(detail).toContain("Contract total");
     expect(editDialog).toContain("Derived contract total");
     expect(editDialog).toContain("readOnly");
+    expect(editDialog).toContain("edit-contract-status");
+    expect(editDialog).toContain("trpc.contract.updateStatus");
   });
 
   it("adds draft-only edit actions to both line-item ledger views", () => {
@@ -28,7 +30,9 @@ describe("draft contract line-item UI affordances", () => {
     expect(ledger).toContain("deleteLineItem");
     expect(ledger).toContain('row.contract.status === "DRAFT"');
     expect(contracts).toContain("EditContractDialog");
-    expect(contracts).toContain('row.status === "DRAFT"');
+    expect(contracts).toContain('row.status !== "ARCHIVED"');
+    expect(contracts).toContain("/contracts/${row.id}`");
+    expect(contracts).toContain("Open");
     expect(contracts).toContain("deleteContract");
     expect(contracts).toContain("ContractStatusActions");
     expect(ledger).toContain("deleteContract");

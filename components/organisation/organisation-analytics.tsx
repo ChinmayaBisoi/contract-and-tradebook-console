@@ -2,17 +2,19 @@
 
 import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import {
-  CalendarDaysIcon,
+  ArchiveIcon,
+  CalculatorIcon,
+  FileStackIcon,
   FileTextIcon,
-  MailIcon,
-  ScrollTextIcon,
-  UsersIcon,
-  UserXIcon,
+  HandCoinsIcon,
+  ReceiptTextIcon,
+  ScaleIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,21 +24,105 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  type ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useTRPC } from "@/trpc/client";
 
-const dateFormatter = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
+const integerFormatter = new Intl.NumberFormat("en-US");
+const currencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const longDateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
+  day: "numeric",
   year: "numeric",
   timeZone: "UTC",
 });
+const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
 
-function formatAge(ageInDays: number) {
-  if (ageInDays === 0) {
-    return "Created today";
-  }
+const timelineChartConfig = {
+  contracts: {
+    label: "Contracts",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig;
 
-  return `${ageInDays} ${ageInDays === 1 ? "day" : "days"}`;
+type RangePreset = "all" | "30d" | "90d" | "180d" | "custom";
+type AnalyticsFilters = {
+  contractId?: string;
+  status?: "DRAFT" | "FINALIZED" | "ARCHIVED";
+  poDateFrom?: Date;
+  poDateTo?: Date;
+};
+
+function formatInteger(value: number) {
+  return integerFormatter.format(value);
+}
+
+function formatCurrency(value: number) {
+  return currencyFormatter.format(value);
+}
+
+function toDateInputValue(date: Date | null | undefined) {
+  return date ? new Date(date).toISOString().slice(0, 10) : "";
+}
+
+function parseDateInput(value: string) {
+  return value ? new Date(`${value}T00:00:00.000Z`) : null;
+}
+
+function shiftDate(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setUTCDate(copy.getUTCDate() + days);
+  return copy;
+}
+
+function shiftMonths(date: Date, months: number) {
+  const copy = new Date(date);
+  copy.setUTCMonth(copy.getUTCMonth() + months);
+  return copy;
+}
+
+function clampDate(date: Date, min: Date, max: Date) {
+  if (date < min) return min;
+  if (date > max) return max;
+  return date;
+}
+
+function getPresetStartDate(
+  preset: Exclude<RangePreset, "all" | "custom">,
+  max: Date,
+) {
+  if (preset === "30d") return shiftDate(max, -30);
+  if (preset === "90d") return shiftMonths(max, -3);
+  return shiftMonths(max, -6);
+}
+
+function formatStatusLabel(status: AnalyticsFilters["status"] | "ALL") {
+  if (status === "ALL") return "All statuses";
+  if (status === "DRAFT") return "Draft";
+  if (status === "FINALIZED") return "Finalized";
+  return "Archived";
 }
 
 function MetricCard({
@@ -46,9 +132,9 @@ function MetricCard({
   icon: Icon,
 }: {
   label: string;
-  value: number | string;
-  description: React.ReactNode;
-  icon: typeof UsersIcon;
+  value: string;
+  description: string;
+  icon: typeof FileTextIcon;
 }) {
   return (
     <Card size="sm">
@@ -68,29 +154,27 @@ function MetricCard({
   );
 }
 
-function UnavailableCard({
-  label,
+function ChartCard({
+  title,
   description,
-  icon: Icon,
+  controls,
+  children,
 }: {
-  label: string;
+  title: string;
   description: string;
-  icon: typeof FileTextIcon;
+  controls?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <Card size="sm" className="bg-muted/20">
+    <Card className="@container/card">
       <CardHeader>
-        <CardTitle>{label}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-        <CardAction className="text-muted-foreground">
-          <Icon aria-hidden="true" className="size-4" />
-        </CardAction>
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        {controls ? <CardAction>{controls}</CardAction> : null}
       </CardHeader>
-      <CardContent>
-        <Badge variant="outline" className="text-muted-foreground">
-          Not connected
-        </Badge>
-      </CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
   );
 }
@@ -102,22 +186,106 @@ export function OrganisationAnalytics({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
-  const input = { organisationId };
-  const { data: analytics } = useSuspenseQuery(
-    trpc.organisation.getAnalytics.queryOptions(input),
+  const [contractId, setContractId] = useState("all");
+  const [status, setStatus] = useState<
+    "ALL" | "DRAFT" | "FINALIZED" | "ARCHIVED"
+  >("ALL");
+  const [rangePreset, setRangePreset] = useState<RangePreset>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const { data: organisation } = useSuspenseQuery(
+    trpc.organisation.get.queryOptions({ id: organisationId }),
   );
+  const { data: baseAnalytics } = useSuspenseQuery(
+    trpc.organisation.getAnalytics.queryOptions({ organisationId }),
+  );
+
+  const fullRangeStart = baseAnalytics.poDateRange.min;
+  const fullRangeEnd = baseAnalytics.poDateRange.max;
+
+  useEffect(() => {
+    if (rangePreset !== "custom") return;
+    if (!customFrom && fullRangeStart) {
+      setCustomFrom(toDateInputValue(fullRangeStart));
+    }
+    if (!customTo && fullRangeEnd) {
+      setCustomTo(toDateInputValue(fullRangeEnd));
+    }
+  }, [customFrom, customTo, fullRangeEnd, fullRangeStart, rangePreset]);
+
+  const activeRange = useMemo(() => {
+    if (!fullRangeStart || !fullRangeEnd) {
+      return { from: undefined, to: undefined };
+    }
+
+    if (rangePreset === "all") {
+      return { from: fullRangeStart, to: fullRangeEnd };
+    }
+
+    if (rangePreset === "custom") {
+      const parsedFrom = parseDateInput(customFrom);
+      const parsedTo = parseDateInput(customTo);
+      return {
+        from: parsedFrom
+          ? clampDate(parsedFrom, fullRangeStart, fullRangeEnd)
+          : undefined,
+        to: parsedTo
+          ? clampDate(parsedTo, fullRangeStart, fullRangeEnd)
+          : undefined,
+      };
+    }
+
+    return {
+      from: clampDate(
+        getPresetStartDate(rangePreset, fullRangeEnd),
+        fullRangeStart,
+        fullRangeEnd,
+      ),
+      to: fullRangeEnd,
+    };
+  }, [customFrom, customTo, fullRangeEnd, fullRangeStart, rangePreset]);
+
+  const timelineFilters = useMemo(
+    () => ({
+      ...(contractId !== "all" ? { contractId } : {}),
+      ...(status !== "ALL" ? { status } : {}),
+      ...(activeRange.from ? { poDateFrom: activeRange.from } : {}),
+      ...(activeRange.to ? { poDateTo: activeRange.to } : {}),
+    }),
+    [activeRange.from, activeRange.to, contractId, status],
+  );
+  const { data: timelineAnalytics } = useSuspenseQuery(
+    trpc.organisation.getAnalytics.queryOptions({
+      organisationId,
+      filters: timelineFilters,
+    }),
+  );
+
   useOrganisationEvents({
     organisationId,
     onEvent: async (event) => {
-      if (event.entity !== "organisation" && event.entity !== "invitation") {
+      if (
+        event.entity !== "organisation" &&
+        event.entity !== "contract" &&
+        event.entity !== "lineItem"
+      ) {
         return;
       }
 
       await queryClient.invalidateQueries(
-        trpc.organisation.getAnalytics.queryFilter(input),
+        trpc.organisation.getAnalytics.queryFilter(),
       );
     },
   });
+
+  if (organisation.role !== "OWNER" && organisation.role !== "ADMIN") {
+    return null;
+  }
+
+  const rangeDescription =
+    activeRange.from && activeRange.to
+      ? `Count of contracts by PO date from ${longDateFormatter.format(activeRange.from)} to ${longDateFormatter.format(activeRange.to)}.`
+      : "Count of contracts by PO date.";
 
   return (
     <section
@@ -133,18 +301,21 @@ export function OrganisationAnalytics({
             Overview
           </h2>
           <p className="text-sm text-muted-foreground">
-            Current membership and organisation activity at a glance.
+            Live contract totals and summary-sheet PO date activity for this
+            organisation.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            nativeButton={false}
             render={<Link href={`/org/${organisationId}/imports`} />}
           >
             Import workbook
           </Button>
           <Button
             variant="outline"
+            nativeButton={false}
             render={
               <Link href={`/api/org/${organisationId}/export?format=excel`} />
             }
@@ -153,6 +324,7 @@ export function OrganisationAnalytics({
           </Button>
           <Button
             variant="outline"
+            nativeButton={false}
             render={
               <Link href={`/api/org/${organisationId}/export?format=json`} />
             }
@@ -164,49 +336,271 @@ export function OrganisationAnalytics({
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
-          label="Active members"
-          value={analytics.activeMemberCount}
-          description="People with current access"
-          icon={UsersIcon}
+          label="Total contracts"
+          value={formatInteger(baseAnalytics.totalContracts)}
+          description="All contracts in this organisation"
+          icon={FileTextIcon}
         />
         <MetricCard
-          label="Disabled members"
-          value={analytics.disabledMemberCount}
-          description="Access currently suspended"
-          icon={UserXIcon}
+          label="Total line items"
+          value={formatInteger(baseAnalytics.totalLineItems)}
+          description="Line items across every contract"
+          icon={ReceiptTextIcon}
         />
         <MetricCard
-          label="Pending invitations"
-          value={analytics.pendingInvitationCount}
-          description="Valid invitations awaiting response"
-          icon={MailIcon}
+          label="Grand contract value"
+          value={formatCurrency(baseAnalytics.grandContractValue)}
+          description="Sum of all contract totals"
+          icon={HandCoinsIcon}
         />
         <MetricCard
-          label="Organisation age"
-          value={formatAge(analytics.ageInDays)}
-          description={
-            <>
-              Created{" "}
-              <time dateTime={new Date(analytics.createdAt).toISOString()}>
-                {dateFormatter.format(new Date(analytics.createdAt))}
-              </time>
-            </>
-          }
-          icon={CalendarDaysIcon}
+          label="Average line value"
+          value={formatCurrency(baseAnalytics.averageLineValue)}
+          description="Average line-item total"
+          icon={CalculatorIcon}
+        />
+        <MetricCard
+          label="Largest line value"
+          value={formatCurrency(baseAnalytics.largestLineValue)}
+          description="Highest line-item total"
+          icon={ScaleIcon}
+        />
+        <MetricCard
+          label="Draft contracts"
+          value={formatInteger(baseAnalytics.draftContracts)}
+          description="Contracts still in draft"
+          icon={FileStackIcon}
+        />
+        <MetricCard
+          label="Finalized contracts"
+          value={formatInteger(baseAnalytics.finalizedContracts)}
+          description="Contracts ready for execution"
+          icon={HandCoinsIcon}
+        />
+        <MetricCard
+          label="Archived contracts"
+          value={formatInteger(baseAnalytics.archivedContracts)}
+          description="Closed or retired contracts"
+          icon={ArchiveIcon}
         />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <UnavailableCard
-          label="Contracts"
-          description="Contract metrics are not available in this workspace."
-          icon={FileTextIcon}
-        />
-        <UnavailableCard
-          label="Audit activity"
-          description="Audit metrics are not available in this workspace."
-          icon={ScrollTextIcon}
-        />
+      <div className="grid gap-3">
+        <div className="grid gap-3 rounded-xl border bg-card p-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="space-y-2">
+            <label
+              htmlFor="analytics-contract-filter"
+              className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"
+            >
+              Contract
+            </label>
+            <Select
+              value={contractId}
+              onValueChange={(value) => setContractId(value ?? "all")}
+            >
+              <SelectTrigger id="analytics-contract-filter" className="w-full">
+                <SelectValue placeholder="All contracts" />
+              </SelectTrigger>
+              <SelectContent align="start" className="w-[var(--anchor-width)]">
+                <SelectItem value="all">All contracts</SelectItem>
+                {baseAnalytics.contractOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="analytics-status-filter"
+              className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"
+            >
+              Status
+            </label>
+            <Select
+              value={status}
+              onValueChange={(value) =>
+                setStatus((value as typeof status) ?? "ALL")
+              }
+            >
+              <SelectTrigger id="analytics-status-filter" className="w-full">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent align="start" className="w-[var(--anchor-width)]">
+                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="FINALIZED">Finalized</SelectItem>
+                <SelectItem value="ARCHIVED">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="analytics-date-from"
+              className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"
+            >
+              Date from
+            </label>
+            <Input
+              id="analytics-date-from"
+              type="date"
+              value={
+                rangePreset === "custom"
+                  ? customFrom
+                  : toDateInputValue(activeRange.from ?? fullRangeStart)
+              }
+              min={toDateInputValue(fullRangeStart)}
+              max={toDateInputValue(fullRangeEnd)}
+              onChange={(event) => {
+                setRangePreset("custom");
+                setCustomFrom(event.target.value);
+              }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="analytics-date-to"
+              className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"
+            >
+              Date to
+            </label>
+            <Input
+              id="analytics-date-to"
+              type="date"
+              value={
+                rangePreset === "custom"
+                  ? customTo
+                  : toDateInputValue(activeRange.to ?? fullRangeEnd)
+              }
+              min={toDateInputValue(fullRangeStart)}
+              max={toDateInputValue(fullRangeEnd)}
+              onChange={(event) => {
+                setRangePreset("custom");
+                setCustomTo(event.target.value);
+              }}
+            />
+          </div>
+        </div>
+
+        <ChartCard
+          title="Contracts over time"
+          description={rangeDescription}
+          controls={
+            <ToggleGroup
+              multiple={false}
+              value={[rangePreset]}
+              onValueChange={(value) => {
+                const nextPreset =
+                  (value[0] as RangePreset | undefined) ?? "all";
+                setRangePreset(nextPreset);
+                if (nextPreset === "all") {
+                  setCustomFrom(toDateInputValue(fullRangeStart));
+                  setCustomTo(toDateInputValue(fullRangeEnd));
+                }
+              }}
+              variant="outline"
+              spacing={0}
+              className="hidden @[900px]/card:flex *:data-[slot=toggle-group-item]:px-4!"
+            >
+              <ToggleGroupItem value="all">Full range</ToggleGroupItem>
+              <ToggleGroupItem value="30d">Last 30 days</ToggleGroupItem>
+              <ToggleGroupItem value="90d">Last 3 months</ToggleGroupItem>
+              <ToggleGroupItem value="180d">Last 6 months</ToggleGroupItem>
+            </ToggleGroup>
+          }
+        >
+          {timelineAnalytics.contractsOverTime.length > 0 ? (
+            <ChartContainer
+              config={timelineChartConfig}
+              className="aspect-auto h-[320px] w-full"
+            >
+              <AreaChart
+                data={timelineAnalytics.contractsOverTime}
+                accessibilityLayer
+              >
+                <defs>
+                  <linearGradient
+                    id="fillContracts"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="5%"
+                      stopColor="var(--color-contracts)"
+                      stopOpacity={0.65}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="var(--color-contracts)"
+                      stopOpacity={0.08}
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  minTickGap={32}
+                  tickFormatter={(value) =>
+                    shortDateFormatter.format(
+                      new Date(`${value}T00:00:00.000Z`),
+                    )
+                  }
+                />
+                <YAxis allowDecimals={false} width={32} />
+                <ChartTooltip
+                  cursor={false}
+                  content={
+                    <ChartTooltipContent
+                      indicator="dot"
+                      labelFormatter={(value) =>
+                        longDateFormatter.format(
+                          new Date(`${String(value)}T00:00:00.000Z`),
+                        )
+                      }
+                      formatter={(value) => (
+                        <span className="font-mono font-medium text-foreground">
+                          {formatInteger(Number(value))}
+                        </span>
+                      )}
+                    />
+                  }
+                />
+                <Area
+                  type="monotone"
+                  dataKey="contractCount"
+                  stroke="var(--color-contracts)"
+                  fill="url(#fillContracts)"
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ChartContainer>
+          ) : (
+            <div className="grid min-h-56 place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
+              No contracts match the current filters.
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span>
+              Filter:{" "}
+              {contractId === "all"
+                ? "All contracts"
+                : baseAnalytics.contractOptions.find(
+                    (option) => option.id === contractId,
+                  )?.label ?? "Selected contract"}
+            </span>
+            <span>Status: {formatStatusLabel(status)}</span>
+          </div>
+        </ChartCard>
       </div>
     </section>
   );

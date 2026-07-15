@@ -75,6 +75,35 @@ type OrganisationRouterDb = {
   invitation: {
     count: (args: unknown) => Promise<number>;
   };
+  contract: {
+    count: (args: unknown) => Promise<number>;
+    aggregate: (args: unknown) => Promise<{
+      _sum?: { total?: unknown };
+      _min?: { poDate?: Date | null };
+      _max?: { poDate?: Date | null };
+    }>;
+    findMany: (args: unknown) => Promise<
+      Array<{
+        id: string;
+        poRefNo: string;
+        clientName: string;
+      }>
+    >;
+    groupBy: (args: unknown) => Promise<
+      Array<{
+        status?: "DRAFT" | "FINALIZED" | "ARCHIVED";
+        poDate?: Date;
+        _count: { _all: number };
+      }>
+    >;
+  };
+  lineItem: {
+    count: (args: unknown) => Promise<number>;
+    aggregate: (args: unknown) => Promise<{
+      _avg?: { total?: unknown };
+      _max?: { total?: unknown };
+    }>;
+  };
   $transaction?: <T>(
     operation: (tx: OrganisationTransactionClient) => Promise<T>,
     options: { isolationLevel: "Serializable" },
@@ -235,6 +264,29 @@ function isPrismaError(error: unknown, code: string) {
     "code" in error &&
     error.code === code
   );
+}
+
+function decimalToNumber(value: unknown) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toNumber" in value &&
+    typeof value.toNumber === "function"
+  ) {
+    const parsed = value.toNumber();
+    return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
 }
 
 async function runSerializableMembershipMutation<T>(
@@ -414,7 +466,19 @@ async function mutateOrganisationMember({
 
 export const organisationRouter = createTRPCRouter({
   getAnalytics: protectedProcedure
-    .input(z.object({ organisationId: z.string().min(1) }))
+    .input(
+      z.object({
+        organisationId: z.string().min(1),
+        filters: z
+          .object({
+            contractId: z.string().min(1).optional(),
+            status: z.enum(["DRAFT", "FINALIZED", "ARCHIVED"]).optional(),
+            poDateFrom: z.coerce.date().optional(),
+            poDateTo: z.coerce.date().optional(),
+          })
+          .default({}),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       const db = getOrganisationDb(ctx);
 
@@ -429,6 +493,13 @@ export const organisationRouter = createTRPCRouter({
         activeMemberCount,
         disabledMemberCount,
         pendingInvitationCount,
+        totalContracts,
+        contractTotals,
+        totalLineItems,
+        lineItemTotals,
+        contractStatuses,
+        contractOptions,
+        contractTimeline,
       ] = await Promise.all([
         db.organisation.findUnique({
           where: { id: input.organisationId },
@@ -453,6 +524,72 @@ export const organisationRouter = createTRPCRouter({
             expiresAt: { gt: new Date() },
           },
         }),
+        db.contract.count({
+          where: {
+            organisationId: input.organisationId,
+          },
+        }),
+        db.contract.aggregate({
+          where: {
+            organisationId: input.organisationId,
+          },
+          _sum: { total: true },
+          _min: { poDate: true },
+          _max: { poDate: true },
+        }),
+        db.lineItem.count({
+          where: {
+            organisationId: input.organisationId,
+          },
+        }),
+        db.lineItem.aggregate({
+          where: {
+            organisationId: input.organisationId,
+            total: { not: null },
+          },
+          _avg: { total: true },
+          _max: { total: true },
+        }),
+        db.contract.groupBy({
+          by: ["status"],
+          where: {
+            organisationId: input.organisationId,
+          },
+          _count: { _all: true },
+        }),
+        db.contract.findMany({
+          where: {
+            organisationId: input.organisationId,
+          },
+          orderBy: [{ poDate: "desc" }, { poRefNo: "asc" }],
+          select: {
+            id: true,
+            poRefNo: true,
+            clientName: true,
+          },
+        }),
+        db.contract.groupBy({
+          by: ["poDate"],
+          where: {
+            organisationId: input.organisationId,
+            ...(input.filters.contractId ? { id: input.filters.contractId } : {}),
+            ...(input.filters.status ? { status: input.filters.status } : {}),
+            ...(input.filters.poDateFrom || input.filters.poDateTo
+              ? {
+                  poDate: {
+                    ...(input.filters.poDateFrom
+                      ? { gte: input.filters.poDateFrom }
+                      : {}),
+                    ...(input.filters.poDateTo
+                      ? { lte: input.filters.poDateTo }
+                      : {}),
+                  },
+                }
+              : {}),
+          },
+          _count: { _all: true },
+          orderBy: { poDate: "asc" },
+        }),
       ]);
 
       if (!organisation) {
@@ -460,6 +597,18 @@ export const organisationRouter = createTRPCRouter({
           code: "NOT_FOUND",
           message: "Organisation was not found.",
         });
+      }
+
+      const contractCounts = {
+        DRAFT: 0,
+        FINALIZED: 0,
+        ARCHIVED: 0,
+      };
+
+      for (const entry of contractStatuses) {
+        if (entry.status) {
+          contractCounts[entry.status] = entry._count._all;
+        }
       }
 
       return {
@@ -474,6 +623,26 @@ export const organisationRouter = createTRPCRouter({
               (24 * 60 * 60 * 1000),
           ),
         ),
+        totalContracts,
+        totalLineItems,
+        grandContractValue: decimalToNumber(contractTotals._sum?.total),
+        averageLineValue: decimalToNumber(lineItemTotals._avg?.total),
+        largestLineValue: decimalToNumber(lineItemTotals._max?.total),
+        draftContracts: contractCounts.DRAFT,
+        finalizedContracts: contractCounts.FINALIZED,
+        archivedContracts: contractCounts.ARCHIVED,
+        poDateRange: {
+          min: contractTotals._min?.poDate ?? null,
+          max: contractTotals._max?.poDate ?? null,
+        },
+        contractOptions: contractOptions.map((contract) => ({
+          id: contract.id,
+          label: `${contract.poRefNo} - ${contract.clientName}`,
+        })),
+        contractsOverTime: contractTimeline.map((entry) => ({
+          date: new Date(entry.poDate).toISOString().slice(0, 10),
+          contractCount: entry._count._all,
+        })),
       };
     }),
 

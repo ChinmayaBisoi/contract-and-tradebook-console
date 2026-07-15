@@ -96,6 +96,7 @@ type ContractRecord = {
   poDate: Date;
   paymentTerms: string | null;
   deliveryTerms: string | null;
+  total: { toString(): string };
   lineItems: Array<{
     description: string;
     quantity: { toString(): string };

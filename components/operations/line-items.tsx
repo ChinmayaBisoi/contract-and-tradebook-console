@@ -203,21 +203,23 @@ export function OrganisationLineItems({
           </p>
           {contractId && data?.contract ? (
             <>
+              {data.contract.status !== "ARCHIVED" ? (
+                <EditContractDialog
+                  organisationId={organisationId}
+                  contract={{
+                    id: data.contract.id,
+                    clientName: data.contract.clientName,
+                    poRefNo: data.contract.poRefNo,
+                    poDate: new Date(data.contract.poDate),
+                    paymentTerms: data.contract.paymentTerms,
+                    deliveryTerms: data.contract.deliveryTerms,
+                    total: data.contract.total,
+                    status: data.contract.status,
+                  }}
+                />
+              ) : null}
               {data.contract.status === "DRAFT" ? (
                 <>
-                  <EditContractDialog
-                    organisationId={organisationId}
-                    contract={{
-                      id: data.contract.id,
-                      clientName: data.contract.clientName,
-                      poRefNo: data.contract.poRefNo,
-                      poDate: new Date(data.contract.poDate),
-                      paymentTerms: data.contract.paymentTerms,
-                      deliveryTerms: data.contract.deliveryTerms,
-                      total: data.contract.total,
-                      status: data.contract.status,
-                    }}
-                  />
                   <Button
                     variant="outline"
                     size="sm"
