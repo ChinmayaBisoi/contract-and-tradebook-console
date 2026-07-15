@@ -50,3 +50,20 @@ next-env.d.ts
 
 # clerk configuration (can include secrets)
 /.clerk/
+
+
+
+.nx/cache
+.nx/workspace-data
+.nx/migrate-runs
+vitest.config.*.timestamp*
+
+# Next.js
+.next
+out
+
+.nx/polygraph
+.claude/worktrees
+.claude/settings.local.json
+.agents/
+.codex/

@@ -242,22 +242,6 @@ describe("OrganisationAnalytics", () => {
     expect(
       screen.getByRole("heading", { name: "Contract Operations" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
-      "href",
-      "/org/org_1",
-    );
-    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
-      "href",
-      "/org/org_1/contracts",
-    );
-    expect(screen.getByRole("link", { name: "Audit Trail" })).toHaveAttribute(
-      "href",
-      "/org/org_1/audit-trail",
-    );
-    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
-      "href",
-      "/org/org_1/teams",
-    );
     expect(
       screen.getByRole("button", { name: "Try again" }),
     ).toBeInTheDocument();

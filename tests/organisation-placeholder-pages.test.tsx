@@ -52,7 +52,9 @@ describe("organisation placeholder pages", () => {
   it("honestly explains that import processing is unavailable", async () => {
     await renderPage(OrganisationImportsPage);
 
-    expect(screen.getByRole("heading", { name: "Imports" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Imports" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         /import processing is not connected.*this organisation yet/i,

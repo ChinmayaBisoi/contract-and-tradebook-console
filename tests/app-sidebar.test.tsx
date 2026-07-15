@@ -7,7 +7,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { clerkMocks } from "@/tests/mocks/clerk";
 
 const navigationMocks = {
-  pathname: "/dashboard",
+  pathname: "/dashboard" as string | null,
 };
 
 vi.mock("next/navigation", () => ({
@@ -98,6 +98,19 @@ describe("AppSidebar", () => {
     expect(screen.queryByRole("link", { name: "Team" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Contracts" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Imports" })).toBeNull();
+  });
+
+  it("renders without org links when the pathname is unavailable", () => {
+    navigationMocks.pathname = null;
+
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Overview" })).toBeNull();
   });
 
   it("marks nested org section link active without activating overview", () => {
