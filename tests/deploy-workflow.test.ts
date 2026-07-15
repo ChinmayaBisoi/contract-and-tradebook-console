@@ -18,6 +18,9 @@ describe("deploy workflow", () => {
     expect(workflow).toContain("OPENAI_MAPPING_MODEL");
     expect(workflow).toContain("UPLOADTHING_WORKBOOK_ACL");
     expect(workflow).toContain("LOG_LEVEL");
+    expect(workflow).toContain("aws ecr describe-images");
+    expect(workflow).toContain("IMAGE_EXISTS");
+    expect(workflow).toContain("Reusing existing immutable image");
     expect(deployScript).toContain("aws ecs update-service");
     expect(workflow).not.toContain("rsync -az");
     expect(workflow).not.toContain("EC2_HOST");

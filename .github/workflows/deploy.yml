@@ -79,17 +79,29 @@ jobs:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
           IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          docker buildx build \
-            --platform linux/amd64 \
-            --target production \
-            --build-arg DATABASE_URL="${DATABASE_URL}" \
-            --build-arg DIRECT_URL="${DIRECT_URL}" \
-            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
-            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL}" \
-            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL}" \
-            -t "${IMAGE_URI}" \
-            --push \
-            .
+          IMAGE_EXISTS="false"
+          if aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY}" \
+            --image-ids "imageTag=${IMAGE_TAG}" \
+            > /dev/null 2>&1; then
+            IMAGE_EXISTS="true"
+          fi
+
+          if [[ "${IMAGE_EXISTS}" != "true" ]]; then
+            docker buildx build \
+              --platform linux/amd64 \
+              --target production \
+              --build-arg DATABASE_URL="${DATABASE_URL}" \
+              --build-arg DIRECT_URL="${DIRECT_URL}" \
+              --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
+              --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL}" \
+              --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL="${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL}" \
+              -t "${IMAGE_URI}" \
+              --push \
+              .
+          else
+            echo "Reusing existing immutable image: ${IMAGE_URI}"
+          fi
           echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
 
       - name: Run Prisma migrations
