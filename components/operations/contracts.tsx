@@ -1,12 +1,19 @@
 "use client";
 
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLinkIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { ExternalLinkIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
+import { toast } from "sonner";
 
 import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
+import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { DebouncedInput } from "@/components/filters/debounced-input";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
@@ -58,6 +65,7 @@ export function OrganisationContracts({
 }) {
   const trpc = useTRPC();
   const queryClient = useQueryClient();
+  const deleteContract = useMutation(trpc.contract.delete.mutationOptions());
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(contractSearchParams, {
     history: "push",
@@ -103,6 +111,27 @@ export function OrganisationContracts({
   };
   const rows = data?.data ?? [];
   const showEmpty = !isLoading && rows.length === 0;
+
+  async function handleDeleteContract(id: string) {
+    if (!window.confirm("Delete this draft contract and its line items?")) {
+      return;
+    }
+
+    try {
+      await deleteContract.mutateAsync({ organisationId, id });
+      await Promise.all([
+        queryClient.invalidateQueries(trpc.contract.list.queryFilter(input)),
+        queryClient.invalidateQueries(
+          trpc.lineItem.list.queryFilter({ organisationId }),
+        ),
+      ]);
+      toast.success("Contract deleted");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Contract could not be deleted",
+      );
+    }
+  }
 
   return (
     <section aria-labelledby="contracts-title" className="space-y-4">
@@ -333,25 +362,43 @@ export function OrganisationContracts({
                         {date.format(new Date(row.updatedAt))}
                       </TableCell>
                       <TableCell>
-                        {row.status === "DRAFT" ? (
-                          <EditContractDialog
+                        <div className="flex items-center gap-2">
+                          {row.status === "DRAFT" ? (
+                            <>
+                              <EditContractDialog
+                                organisationId={organisationId}
+                                contract={{
+                                  id: row.id,
+                                  clientName: row.clientName,
+                                  poRefNo: row.poRefNo,
+                                  poDate: new Date(row.poDate),
+                                  paymentTerms: row.paymentTerms,
+                                  deliveryTerms: row.deliveryTerms,
+                                  total: row.total,
+                                  status: row.status,
+                                }}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={deleteContract.isPending}
+                                onClick={() => void handleDeleteContract(row.id)}
+                              >
+                                <Trash2Icon />
+                                Delete
+                              </Button>
+                            </>
+                          ) : row.status === "ARCHIVED" ? (
+                            <span className="text-sm text-muted-foreground">
+                              Read only
+                            </span>
+                          ) : null}
+                          <ContractStatusActions
                             organisationId={organisationId}
-                            contract={{
-                              id: row.id,
-                              clientName: row.clientName,
-                              poRefNo: row.poRefNo,
-                              poDate: new Date(row.poDate),
-                              paymentTerms: row.paymentTerms,
-                              deliveryTerms: row.deliveryTerms,
-                              total: row.total,
-                              status: row.status,
-                            }}
+                            contractId={row.id}
+                            status={row.status}
                           />
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            Read only
-                          </span>
-                        )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Button

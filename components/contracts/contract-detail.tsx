@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CreateLineItemDialog } from "@/components/contracts/create-line-item-dialog";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
+import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { TableEmptyState } from "@/components/contracts/contracts-table-states";
 import { Badge } from "@/components/ui/badge";
@@ -53,10 +54,8 @@ export function ContractDetail({
     }),
   );
   const deleteContract = useMutation(trpc.contract.delete.mutationOptions());
-  const updateStatus = useMutation(trpc.contract.updateStatus.mutationOptions());
   const deleteLineItem = useMutation(trpc.lineItem.delete.mutationOptions());
   const isDraft = data.status === "DRAFT";
-  const isFinalized = data.status === "FINALIZED";
 
   useOrganisationEvents({
     organisationId,
@@ -132,39 +131,6 @@ export function ContractDetail({
     }
   }
 
-  async function handleUpdateStatus(nextStatus: "FINALIZED" | "ARCHIVED") {
-    const actionLabel = nextStatus === "FINALIZED" ? "finalize" : "archive";
-    if (!window.confirm(`Are you sure you want to ${actionLabel} this contract?`)) {
-      return;
-    }
-
-    try {
-      await updateStatus.mutateAsync({
-        organisationId,
-        id: contractId,
-        status: nextStatus,
-      });
-      await Promise.all([
-        queryClient.invalidateQueries(
-          trpc.contract.get.queryFilter({ organisationId, id: contractId }),
-        ),
-        queryClient.invalidateQueries(
-          trpc.contract.list.queryFilter({ organisationId }),
-        ),
-        queryClient.invalidateQueries(trpc.audit.list.queryFilter({ organisationId })),
-      ]);
-      toast.success(
-        nextStatus === "FINALIZED" ? "Contract finalized" : "Contract archived",
-      );
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Contract status could not be updated",
-      );
-    }
-  }
-
   return (
     <section className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -188,26 +154,11 @@ export function ContractDetail({
             organisationId={organisationId}
             contract={{ ...data, poDate: new Date(data.poDate) }}
           />
-          {isDraft ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={updateStatus.isPending}
-              onClick={() => void handleUpdateStatus("FINALIZED")}
-            >
-              {updateStatus.isPending ? "Finalizing..." : "Finalize"}
-            </Button>
-          ) : null}
-          {isFinalized ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={updateStatus.isPending}
-              onClick={() => void handleUpdateStatus("ARCHIVED")}
-            >
-              {updateStatus.isPending ? "Archiving..." : "Archive"}
-            </Button>
-          ) : null}
+          <ContractStatusActions
+            organisationId={organisationId}
+            contractId={contractId}
+            status={data.status}
+          />
           <Button
             variant="outline"
             size="sm"

@@ -74,6 +74,10 @@ describe("AppSidebar", () => {
       "href",
       "/org/org_1/teams",
     );
+    expect(screen.getByRole("link", { name: "Organisation settings" })).toHaveAttribute(
+      "href",
+      "/org/org_1/settings",
+    );
     expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
       "href",
       "/org/org_1/contracts",
@@ -96,6 +100,7 @@ describe("AppSidebar", () => {
     expect(screen.queryByRole("link", { name: "Overview" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Audit Trail" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Team" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Organisation settings" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Contracts" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Imports" })).toBeNull();
   });

@@ -314,6 +314,41 @@ describe("contract and line item routers", () => {
     expect(tx.auditEvent.create).not.toHaveBeenCalled();
   });
 
+  it("rejects reverse contract status transitions from archived", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "ARCHIVED",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+    await expect(
+      caller.contract.updateStatus({
+        organisationId: "org_1",
+        id: "contract_1",
+        status: "FINALIZED",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Contract status cannot change from ARCHIVED to FINALIZED.",
+    });
+
+    expect(tx.contract.update).not.toHaveBeenCalled();
+    expect(tx.auditEvent.create).not.toHaveBeenCalled();
+  });
+
   it("updates draft contracts and records an update event", async () => {
     const { db, tx } = createDb({});
     tx.contract.findFirst.mockResolvedValue({

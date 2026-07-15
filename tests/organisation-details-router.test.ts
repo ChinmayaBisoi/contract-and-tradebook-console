@@ -74,6 +74,68 @@ describe("organisation details router", () => {
     vi.useRealTimers();
   });
 
+  it("updates organisation details for owners", async () => {
+    const updatedAt = new Date("2026-07-15T12:00:00.000Z");
+    const createdAt = new Date("2026-07-01T00:00:00.000Z");
+    const update = vi.fn().mockResolvedValue({
+      id: "org_1",
+      name: "Acme Trading",
+      description: "Updated description",
+      createdAt,
+      updatedAt,
+      users: [{ role: "OWNER", status: "ACTIVE" }],
+    });
+    const findMany = vi.fn().mockResolvedValue([
+      { clerkUserId: "owner_1" },
+      { clerkUserId: "member_1" },
+    ]);
+    const caller = createCaller({
+      organisation: { update },
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+        findMany,
+      },
+    });
+
+    const result = await caller.organisation.update({
+      id: "org_1",
+      name: "Acme Trading",
+      description: "Updated description",
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "org_1" },
+      data: {
+        name: "Acme Trading",
+        description: "Updated description",
+      },
+      select: expect.any(Object),
+    });
+    expect(result).toMatchObject({
+      id: "org_1",
+      name: "Acme Trading",
+      description: "Updated description",
+      role: "OWNER",
+    });
+  });
+
+  it("rejects organisation updates from admins", async () => {
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership("ADMIN")),
+      },
+    });
+
+    await expect(
+      caller.organisation.update({
+        id: "org_1",
+        name: "Renamed Org",
+      }),
+    ).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+  });
+
   it("lists organisation members with scoped filters, paging, and owner actions", async () => {
     const createdAt = new Date("2026-07-10T00:00:00.000Z");
     const findMany = vi.fn().mockResolvedValue([

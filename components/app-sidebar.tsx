@@ -82,6 +82,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           match: "prefix" as const,
         },
         {
+          title: "Organisation settings",
+          url: `${orgBasePath}/settings`,
+          icon: <Settings2Icon />,
+          match: "prefix" as const,
+        },
+        {
           title: "Audit Trail",
           url: `${orgBasePath}/audit-trail`,
           icon: <ScrollTextIcon />,
