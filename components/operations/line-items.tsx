@@ -7,12 +7,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
 import { CreateLineItemDialog } from "@/components/contracts/create-line-item-dialog";
+import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { DebouncedInput } from "@/components/filters/debounced-input";
 import {
@@ -59,7 +61,9 @@ export function OrganisationLineItems({
   contractId?: string;
 }) {
   const trpc = useTRPC();
+  const router = useRouter();
   const queryClient = useQueryClient();
+  const deleteContract = useMutation(trpc.contract.delete.mutationOptions());
   const deleteLineItem = useMutation(trpc.lineItem.delete.mutationOptions());
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(lineItemSearchParams, {
@@ -119,6 +123,32 @@ export function OrganisationLineItems({
   const showEmpty = !isLoading && rows.length === 0;
   const columnCount = contractId ? 8 : 10;
 
+  async function handleDeleteContract() {
+    if (!contractId) {
+      return;
+    }
+
+    if (!window.confirm("Delete this draft contract and its line items?")) {
+      return;
+    }
+
+    try {
+      await deleteContract.mutateAsync({ organisationId, id: contractId });
+      await Promise.all([
+        queryClient.invalidateQueries(trpc.lineItem.list.queryFilter(input)),
+        queryClient.invalidateQueries(
+          trpc.contract.list.queryFilter({ organisationId }),
+        ),
+      ]);
+      toast.success("Contract deleted");
+      router.push(`/org/${organisationId}/contracts`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Contract could not be deleted",
+      );
+    }
+  }
+
   async function handleDeleteLineItem(id: string, currentContractId: string) {
     if (!window.confirm("Delete this draft line item?")) {
       return;
@@ -171,25 +201,43 @@ export function OrganisationLineItems({
           <p className="text-sm tabular-nums text-muted-foreground">
             {pagination.total} items
           </p>
-          {contractId && data?.contract?.status === "DRAFT" ? (
+          {contractId && data?.contract ? (
             <>
-              <EditContractDialog
-                organisationId={organisationId}
-                contract={{
-                  id: data.contract.id,
-                  clientName: data.contract.clientName,
-                  poRefNo: data.contract.poRefNo,
-                  poDate: new Date(data.contract.poDate),
-                  paymentTerms: data.contract.paymentTerms,
-                  deliveryTerms: data.contract.deliveryTerms,
-                  total: data.contract.total,
-                  status: data.contract.status,
-                }}
-              />
-              <CreateLineItemDialog
+              {data.contract.status === "DRAFT" ? (
+                <>
+                  <EditContractDialog
+                    organisationId={organisationId}
+                    contract={{
+                      id: data.contract.id,
+                      clientName: data.contract.clientName,
+                      poRefNo: data.contract.poRefNo,
+                      poDate: new Date(data.contract.poDate),
+                      paymentTerms: data.contract.paymentTerms,
+                      deliveryTerms: data.contract.deliveryTerms,
+                      total: data.contract.total,
+                      status: data.contract.status,
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={deleteContract.isPending}
+                    onClick={() => void handleDeleteContract()}
+                  >
+                    <Trash2Icon />
+                    {deleteContract.isPending ? "Deleting..." : "Delete contract"}
+                  </Button>
+                  <CreateLineItemDialog
+                    organisationId={organisationId}
+                    contractId={data.contract.id}
+                    disabled={false}
+                  />
+                </>
+              ) : null}
+              <ContractStatusActions
                 organisationId={organisationId}
                 contractId={data.contract.id}
-                disabled={false}
+                status={data.contract.status}
               />
             </>
           ) : null}

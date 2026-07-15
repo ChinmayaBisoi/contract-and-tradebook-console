@@ -24,10 +24,21 @@ describe("draft contract line-item UI affordances", () => {
 
     expect(ledger).toContain("EditLineItemDialog");
     expect(ledger).toContain("EditContractDialog");
-    expect(ledger).toContain('data?.contract?.status === "DRAFT"');
+    expect(ledger).toContain('data.contract.status === "DRAFT"');
     expect(ledger).toContain("deleteLineItem");
     expect(ledger).toContain('row.contract.status === "DRAFT"');
     expect(contracts).toContain("EditContractDialog");
     expect(contracts).toContain('row.status === "DRAFT"');
+    expect(contracts).toContain("deleteContract");
+    expect(contracts).toContain("ContractStatusActions");
+    expect(ledger).toContain("deleteContract");
+    expect(ledger).toContain("Delete contract");
+    expect(ledger).toContain("ContractStatusActions");
+    expect(read("components/contracts/contract-status-actions.tsx")).toContain(
+      "trpc.contract.updateStatus",
+    );
+    expect(read("components/contracts/contract-status-actions.tsx")).toContain(
+      "trpc.audit.list.queryFilter",
+    );
   });
 });

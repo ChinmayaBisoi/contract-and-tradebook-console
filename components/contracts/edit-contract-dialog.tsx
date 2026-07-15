@@ -102,7 +102,7 @@ export function EditContractDialog({
         }
       >
         <PencilIcon />
-        Edit contract
+        Edit
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
