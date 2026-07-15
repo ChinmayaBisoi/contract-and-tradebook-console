@@ -639,10 +639,15 @@ export const organisationRouter = createTRPCRouter({
           id: contract.id,
           label: `${contract.poRefNo} - ${contract.clientName}`,
         })),
-        contractsOverTime: contractTimeline.map((entry) => ({
-          date: new Date(entry.poDate).toISOString().slice(0, 10),
-          contractCount: entry._count._all,
-        })),
+        contractsOverTime: contractTimeline
+          .filter(
+            (entry): entry is typeof entry & { poDate: Date } =>
+              entry.poDate instanceof Date,
+          )
+          .map((entry) => ({
+            date: entry.poDate.toISOString().slice(0, 10),
+            contractCount: entry._count._all,
+          })),
       };
     }),
 
