@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { ExternalLinkIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { ArrowRightIcon, ExternalLinkIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
@@ -363,35 +363,35 @@ export function OrganisationContracts({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {row.status === "DRAFT" ? (
-                            <>
-                              <EditContractDialog
-                                organisationId={organisationId}
-                                contract={{
-                                  id: row.id,
-                                  clientName: row.clientName,
-                                  poRefNo: row.poRefNo,
-                                  poDate: new Date(row.poDate),
-                                  paymentTerms: row.paymentTerms,
-                                  deliveryTerms: row.deliveryTerms,
-                                  total: row.total,
-                                  status: row.status,
-                                }}
-                              />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={deleteContract.isPending}
-                                onClick={() => void handleDeleteContract(row.id)}
-                              >
-                                <Trash2Icon />
-                                Delete
-                              </Button>
-                            </>
-                          ) : row.status === "ARCHIVED" ? (
+                          {row.status !== "ARCHIVED" ? (
+                            <EditContractDialog
+                              organisationId={organisationId}
+                              contract={{
+                                id: row.id,
+                                clientName: row.clientName,
+                                poRefNo: row.poRefNo,
+                                poDate: new Date(row.poDate),
+                                paymentTerms: row.paymentTerms,
+                                deliveryTerms: row.deliveryTerms,
+                                total: row.total,
+                                status: row.status,
+                              }}
+                            />
+                          ) : (
                             <span className="text-sm text-muted-foreground">
                               Read only
                             </span>
+                          )}
+                          {row.status === "DRAFT" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={deleteContract.isPending}
+                              onClick={() => void handleDeleteContract(row.id)}
+                            >
+                              <Trash2Icon />
+                              Delete
+                            </Button>
                           ) : null}
                           <ContractStatusActions
                             organisationId={organisationId}
@@ -401,18 +401,32 @@ export function OrganisationContracts({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          render={
-                            <Link
-                              href={`/org/${organisationId}/contracts/${row.id}/line-items`}
-                            />
-                          }
-                          variant="ghost"
-                          size="sm"
-                        >
-                          Items
-                          <ExternalLinkIcon aria-hidden="true" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            render={
+                              <Link
+                                href={`/org/${organisationId}/contracts/${row.id}`}
+                              />
+                            }
+                            variant="ghost"
+                            size="sm"
+                          >
+                            Open
+                            <ArrowRightIcon aria-hidden="true" />
+                          </Button>
+                          <Button
+                            render={
+                              <Link
+                                href={`/org/${organisationId}/contracts/${row.id}/line-items`}
+                              />
+                            }
+                            variant="ghost"
+                            size="sm"
+                          >
+                            Items
+                            <ExternalLinkIcon aria-hidden="true" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
