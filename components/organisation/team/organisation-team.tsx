@@ -2,6 +2,8 @@
 
 import {
   QueryErrorResetBoundary,
+  useMutation,
+  useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import {
@@ -11,8 +13,10 @@ import {
   XIcon,
 } from "lucide-react";
 import { useQueryStates } from "nuqs";
-import { Component, useTransition } from "react";
+import { Component, useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import { CreateInvitationDialog } from "@/components/invitations/create-invitation-dialog";
 import {
   type OrganisationTeamMember,
   OrganisationTeamTable,
@@ -43,6 +47,8 @@ type TeamResult = {
     pageCount: number;
   };
 };
+
+const SAFE_MUTATION_ERROR = "The team change could not be saved. Try again.";
 
 function TeamSectionError({ onRetry }: { onRetry: () => void }) {
   return (
@@ -119,7 +125,9 @@ export function OrganisationTeam({
   organisationId: string;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const [isTransitioning, startTransition] = useTransition();
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [queryState, setQueryState] = useQueryStates(teamSearchParams, {
     history: "push",
     shallow: true,
@@ -133,10 +141,87 @@ export function OrganisationTeam({
     sort: queryState.sort,
     sortDirection: queryState.sortDirection,
   };
+  const { data: organisation } = useSuspenseQuery(
+    trpc.organisation.get.queryOptions({ id: organisationId }),
+  );
   const { data } = useSuspenseQuery(
     trpc.organisation.listMembers.queryOptions(input),
   ) as { data: TeamResult };
+  const createInvitation = useMutation(
+    trpc.invitation.create.mutationOptions(),
+  );
+  const updateMemberRole = useMutation(
+    trpc.organisation.updateMemberRole.mutationOptions(),
+  );
+  const updateMemberStatus = useMutation(
+    trpc.organisation.updateMemberStatus.mutationOptions(),
+  );
+  const removeMember = useMutation(
+    trpc.organisation.removeMember.mutationOptions(),
+  );
   const hasFilters = queryState.filters.length > 0;
+  const requesterRole = organisation.role as "OWNER" | "ADMIN" | "MEMBER";
+  const isMutating =
+    createInvitation.isPending ||
+    updateMemberRole.isPending ||
+    updateMemberStatus.isPending ||
+    removeMember.isPending;
+
+  async function invalidateTeam(includeInvitations = false) {
+    const invalidations = [
+      queryClient.invalidateQueries(
+        trpc.organisation.listMembers.queryFilter({ organisationId }),
+      ),
+      queryClient.invalidateQueries(
+        trpc.organisation.getAnalytics.queryFilter({ organisationId }),
+      ),
+      queryClient.invalidateQueries(
+        trpc.organisation.get.queryFilter({ id: organisationId }),
+      ),
+    ];
+
+    if (includeInvitations) {
+      invalidations.push(
+        queryClient.invalidateQueries(trpc.invitation.list.queryFilter()),
+      );
+    }
+
+    await Promise.all(invalidations);
+  }
+
+  async function runMemberMutation(
+    mutation: Promise<unknown>,
+    successMessage: string,
+  ) {
+    setMutationError(null);
+    try {
+      await mutation;
+      await invalidateTeam();
+      toast.success(successMessage);
+      return true;
+    } catch {
+      setMutationError(SAFE_MUTATION_ERROR);
+      return false;
+    }
+  }
+
+  async function handleCreateInvitation(input: {
+    organisationId: string;
+    email: string;
+    role: "ADMIN" | "MEMBER";
+    expiresAt: Date;
+  }) {
+    setMutationError(null);
+    try {
+      await createInvitation.mutateAsync(input);
+      await invalidateTeam(true);
+      toast.success("Invitation created");
+      return true;
+    } catch {
+      setMutationError(SAFE_MUTATION_ERROR);
+      return false;
+    }
+  }
 
   function updateQuery(update: Parameters<typeof getTeamQueryUpdate>[1]) {
     void setQueryState(getTeamQueryUpdate(queryState, update));
@@ -180,14 +265,34 @@ export function OrganisationTeam({
             Find and review everyone with access to this organisation.
           </p>
         </div>
-        <p
-          className="text-sm tabular-nums text-muted-foreground"
-          aria-live="polite"
-        >
-          {data.pagination.total}{" "}
-          {data.pagination.total === 1 ? "member" : "members"}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p
+            className="text-sm tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {data.pagination.total}{" "}
+            {data.pagination.total === 1 ? "member" : "members"}
+          </p>
+          {requesterRole !== "MEMBER" ? (
+            <CreateInvitationDialog
+              organisationId={organisationId}
+              organisationName={organisation.name}
+              requesterRole={requesterRole}
+              isPending={createInvitation.isPending}
+              error={mutationError}
+              onCreate={handleCreateInvitation}
+            />
+          ) : null}
+        </div>
       </div>
+
+      {mutationError ? (
+        <Alert variant="destructive" role="alert">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertTitle>Team change failed</AlertTitle>
+          <AlertDescription>{mutationError}</AlertDescription>
+        </Alert>
+      ) : null}
 
       <Card aria-busy={isTransitioning}>
         <CardHeader className="flex flex-col gap-3 border-b md:flex-row md:items-center">
@@ -244,10 +349,41 @@ export function OrganisationTeam({
         <CardContent className="px-0">
           <OrganisationTeamTable
             members={data.data}
+            requesterRole={requesterRole}
+            isMutating={isMutating}
             hasFilters={hasFilters}
             sort={queryState.sort}
             sortDirection={queryState.sortDirection}
             onSort={handleSort}
+            onChangeRole={(member, role) =>
+              runMemberMutation(
+                updateMemberRole.mutateAsync({
+                  organisationId,
+                  clerkUserId: member.clerkUserId,
+                  role,
+                }),
+                "Member role updated",
+              )
+            }
+            onChangeStatus={(member, status) =>
+              runMemberMutation(
+                updateMemberStatus.mutateAsync({
+                  organisationId,
+                  clerkUserId: member.clerkUserId,
+                  status,
+                }),
+                status === "ACTIVE" ? "Member enabled" : "Member disabled",
+              )
+            }
+            onRemove={(member) =>
+              runMemberMutation(
+                removeMember.mutateAsync({
+                  organisationId,
+                  clerkUserId: member.clerkUserId,
+                }),
+                "Member removed",
+              )
+            }
           />
           <div className="flex flex-col gap-3 border-t px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <span>

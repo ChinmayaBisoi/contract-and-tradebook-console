@@ -38,7 +38,7 @@ export function CreateInvitationDialog({
     email: string;
     role: "ADMIN" | "MEMBER";
     expiresAt: Date;
-  }) => Promise<void>;
+  }) => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -51,8 +51,10 @@ export function CreateInvitationDialog({
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresInDays);
 
-    await onCreate({ organisationId, email, role, expiresAt });
-    setOpen(false);
+    const created = await onCreate({ organisationId, email, role, expiresAt });
+    if (created !== false) {
+      setOpen(false);
+    }
   }
 
   return (
