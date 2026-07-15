@@ -1,14 +1,20 @@
 "use client";
 
-import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
+import { Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
-
+import { toast } from "sonner";
+import { ContractAuditTrail } from "@/components/contracts/contract-audit-trail";
+import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
+import { TableEmptyState } from "@/components/contracts/contracts-table-states";
 import { CreateLineItemDialog } from "@/components/contracts/create-line-item-dialog";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
-import { ContractStatusActions } from "@/components/contracts/contract-status-actions";
 import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
-import { TableEmptyState } from "@/components/contracts/contracts-table-states";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -21,8 +27,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTRPC } from "@/trpc/client";
-import { Trash2Icon } from "lucide-react";
-import { toast } from "sonner";
 
 const statusLabels = {
   DRAFT: "Draft",
@@ -77,6 +81,12 @@ export function ContractDetail({
         queryClient.invalidateQueries(
           trpc.lineItem.list.queryFilter({ organisationId, contractId }),
         ),
+        queryClient.invalidateQueries(
+          trpc.audit.list.queryFilter({
+            organisationId,
+            filters: { contractId },
+          }),
+        ),
       ]);
     },
   });
@@ -100,7 +110,9 @@ export function ContractDetail({
       router.push(`/org/${organisationId}/contracts`);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Contract could not be deleted",
+        error instanceof Error
+          ? error.message
+          : "Contract could not be deleted",
       );
     }
   }
@@ -126,7 +138,9 @@ export function ContractDetail({
       toast.success("Line item deleted");
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Line item could not be deleted",
+        error instanceof Error
+          ? error.message
+          : "Line item could not be deleted",
       );
     }
   }
@@ -136,7 +150,9 @@ export function ContractDetail({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-2xl font-semibold tracking-tight">{data.poRefNo}</h2>
+            <h2 className="text-2xl font-semibold tracking-tight">
+              {data.poRefNo}
+            </h2>
             <Badge variant="outline">{statusLabels[data.status]}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -209,16 +225,21 @@ export function ContractDetail({
                 <TableBody>
                   {data.lineItems.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.description}</TableCell>
+                      <TableCell className="font-medium">
+                        {item.description}
+                      </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
-                        {number.format(Number(item.quantity))} {item.quantityUnit ?? ""}
+                        {number.format(Number(item.quantity))}{" "}
+                        {item.quantityUnit ?? ""}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
                         {number.format(Number(item.unitPrice))}{" "}
                         {item.pricingUnit ?? ""}
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">
-                        {item.total === null ? "—" : number.format(Number(item.total))}
+                        {item.total === null
+                          ? "—"
+                          : number.format(Number(item.total))}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {date.format(new Date(item.updatedAt))}
@@ -250,6 +271,11 @@ export function ContractDetail({
           )}
         </CardContent>
       </Card>
+
+      <ContractAuditTrail
+        organisationId={organisationId}
+        contractId={contractId}
+      />
     </section>
   );
 }

@@ -1,9 +1,17 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { buildAuditData, writeAuditEvent } from "@/lib/audit";
+import { type buildAuditData, writeAuditEvent } from "@/lib/audit";
 import { assertDraftContract } from "@/lib/contracts/assert-draft-contract";
-import { buildContractFieldData } from "@/lib/contracts/contract-field-data";
+import {
+  ContractExtractionError,
+  extractContractProposal,
+} from "@/lib/contracts/contract-extraction";
+import {
+  buildContractFieldData,
+  toFieldDataItem,
+} from "@/lib/contracts/contract-field-data";
+import { contractProposalSchema } from "@/lib/contracts/contract-proposal";
 import { contractInputSchema } from "@/lib/contracts/contract-schemas";
 import { Prisma } from "@/lib/generated/prisma/client";
 import {
@@ -48,6 +56,17 @@ const contractGetInput = z.object({
 const contractCreateInput = z.object({
   organisationId: z.string().min(1),
   contract: contractInputSchema,
+});
+
+const contractExtractInput = z.object({
+  organisationId: z.string().min(1),
+  text: z.string().trim().min(20).max(50_000),
+});
+
+const contractImportDraftInput = z.object({
+  organisationId: z.string().min(1),
+  sourceType: z.enum(["JSON", "AI_EXTRACT"]),
+  proposal: contractProposalSchema,
 });
 
 const contractUpdateInput = z.object({
@@ -218,6 +237,34 @@ function validateContractStatusTransition({
 }
 
 export const contractRouter = createTRPCRouter({
+  extract: protectedProcedure
+    .input(contractExtractInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:create",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+
+      try {
+        return await extractContractProposal({ text: input.text });
+      } catch (error) {
+        if (error instanceof ContractExtractionError) {
+          throw new TRPCError({
+            code:
+              error.code === "NOT_CONFIGURED"
+                ? "PRECONDITION_FAILED"
+                : "INTERNAL_SERVER_ERROR",
+            message: error.message,
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }),
+
   list: protectedProcedure
     .input(contractListInput)
     .query(async ({ ctx, input }) => {
@@ -238,7 +285,7 @@ export const contractRouter = createTRPCRouter({
 
       if (input.filters.search) {
         conditions.push(
-          Prisma.sql`(contract."clientName" ILIKE ${`%${input.filters.search}%`} OR contract."poRefNo" ILIKE ${`%${input.filters.search}%`})`,
+          Prisma.sql`(contract."clientName" ILIKE ${`%${input.filters.search}%`} OR contract."poRefNo" ILIKE ${`%${input.filters.search}%`} OR contract."id" ILIKE ${`%${input.filters.search}%`})`,
         );
         countWhere.OR = [
           {
@@ -249,6 +296,9 @@ export const contractRouter = createTRPCRouter({
           },
           {
             poRefNo: { contains: input.filters.search, mode: "insensitive" },
+          },
+          {
+            id: { contains: input.filters.search, mode: "insensitive" },
           },
         ];
       }
@@ -331,32 +381,34 @@ export const contractRouter = createTRPCRouter({
       };
     }),
 
-  get: protectedProcedure.input(contractGetInput).query(async ({ ctx, input }) => {
-    const db = ctx.db as unknown as ContractDb;
-    await checkOrgPermission({
-      clerkUserId: ctx.auth.clerkUserId,
-      organisationId: input.organisationId,
-      action: "contract:read",
-      findMembership: createOrganisationMembershipFinder(db),
-    });
-
-    const contract = await db.contract.findFirst({
-      where: { id: input.id, organisationId: input.organisationId },
-      include: {
-        lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
-        auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
-      },
-    });
-
-    if (!contract) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Contract was not found in this organisation.",
+  get: protectedProcedure
+    .input(contractGetInput)
+    .query(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:read",
+        findMembership: createOrganisationMembershipFinder(db),
       });
-    }
 
-    return mapContract(contract);
-  }),
+      const contract = await db.contract.findFirst({
+        where: { id: input.id, organisationId: input.organisationId },
+        include: {
+          lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+          auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+        },
+      });
+
+      if (!contract) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Contract was not found in this organisation.",
+        });
+      }
+
+      return mapContract(contract);
+    }),
 
   create: protectedProcedure
     .input(contractCreateInput)
@@ -388,7 +440,9 @@ export const contractRouter = createTRPCRouter({
               createdByClerkUserId: ctx.auth.clerkUserId,
             },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
@@ -428,6 +482,94 @@ export const contractRouter = createTRPCRouter({
       }
     }),
 
+  importDraft: protectedProcedure
+    .input(contractImportDraftInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      const membership = await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:create",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+      const fieldItems = input.proposal.items.map(toFieldDataItem);
+      const total = fieldItems.reduce((sum, item) => sum + item.total, 0);
+
+      try {
+        const created = await db.$transaction(async (tx) => {
+          const created = await tx.contract.create({
+            data: {
+              organisationId: input.organisationId,
+              sourceType: input.sourceType,
+              clientName: input.proposal.contract.clientName,
+              poRefNo: input.proposal.contract.poRefNo,
+              poDate: input.proposal.contract.poDate,
+              paymentTerms: input.proposal.contract.paymentTerms,
+              deliveryTerms: input.proposal.contract.deliveryTerms,
+              total: new Prisma.Decimal(total),
+              fieldData: buildContractFieldData({
+                contract: input.proposal.contract,
+                items: fieldItems,
+              }),
+              createdByClerkUserId: ctx.auth.clerkUserId,
+              lineItems: {
+                create: input.proposal.items.map((item, sortOrder) => ({
+                  organisationId: input.organisationId,
+                  description: item.description,
+                  quantity: new Prisma.Decimal(item.quantity),
+                  quantityUnit: item.quantityUnit,
+                  unitPrice: new Prisma.Decimal(item.unitPrice),
+                  pricingUnit: item.pricingUnit,
+                  total: new Prisma.Decimal(item.quantity * item.unitPrice),
+                  sortOrder,
+                })),
+              },
+            },
+            include: {
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+            },
+          });
+
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "IMPORT",
+            entityType: "CONTRACT",
+            entityId: created.id,
+            entityLabel: created.poRefNo,
+            contractId: created.id,
+            afterState: {
+              clientName: created.clientName,
+              poRefNo: created.poRefNo,
+              poDate: created.poDate,
+              status: created.status,
+              sourceType: created.sourceType,
+              itemCount: input.proposal.items.length,
+              total,
+            },
+          });
+
+          return mapContract(created);
+        });
+
+        publishRealtimeEvent({
+          entity: "contract",
+          action: "created",
+          entityId: created.id,
+          organisationId: input.organisationId,
+          contractId: created.id,
+        });
+
+        return created;
+      } catch (error) {
+        return mapWriteError(error);
+      }
+    }),
+
   update: protectedProcedure
     .input(contractUpdateInput)
     .mutation(async ({ ctx, input }) => {
@@ -444,7 +586,9 @@ export const contractRouter = createTRPCRouter({
           const existing = await tx.contract.findFirst({
             where: { id: input.id, organisationId: input.organisationId },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
@@ -481,7 +625,9 @@ export const contractRouter = createTRPCRouter({
               }),
             },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
@@ -544,7 +690,9 @@ export const contractRouter = createTRPCRouter({
           const existing = await tx.contract.findFirst({
             where: { id: input.id, organisationId: input.organisationId },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
@@ -570,7 +718,9 @@ export const contractRouter = createTRPCRouter({
               archivedAt: input.status === "ARCHIVED" ? now : null,
             },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
@@ -622,7 +772,9 @@ export const contractRouter = createTRPCRouter({
           const existing = await tx.contract.findFirst({
             where: { id: input.id, organisationId: input.organisationId },
             include: {
-              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              lineItems: {
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+              },
               auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
             },
           });
