@@ -83,11 +83,23 @@ describe("tradebook import pages", () => {
     const workspace = read("components/imports/tradebook-review-workspace.tsx");
     const router = read("trpc/routers/tradebook-import.ts");
     const hook = read("components/imports/use-live-workbook-preview.ts");
+    const worker = read("components/imports/tradebook-preview.worker.ts");
+    const workerTypes = read(
+      "components/imports/tradebook-preview-worker-types.ts",
+    );
     expect(workspace).toContain("getWorkbookData");
     expect(workspace).not.toContain("previewSheet.queryOptions");
     expect(workspace).toContain("rows loaded in browser");
     expect(workspace).toContain("filterSheetRowsForOrganisation");
     expect(hook).toContain("buildClientPreviewWorkbook");
+    expect(hook).toContain("tradebook-preview.worker.ts");
+    expect(hook).toContain('type: "init"');
+    expect(hook).toContain('type: "recalc"');
+    expect(hook).toContain("tradebook-preview-worker-types");
+    expect(worker).toContain('request.type === "init"');
+    expect(worker).toContain("buildClientPreviewWorkbook");
+    expect(workerTypes).toContain('type: "init"');
+    expect(workerTypes).toContain('type: "recalc"');
     expect(router).toContain("getWorkbookData: protectedProcedure");
     expect(router).toContain("persistEditedWorkbookArtifact");
     expect(router).toContain("editedWorkbook");

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { parseStrictDecimal } from "@/lib/tradebook/money";
+
 function optionalText(max: number) {
   return z
     .string()
@@ -7,6 +9,41 @@ function optionalText(max: number) {
     .max(max)
     .optional()
     .transform((value) => value?.trim() || undefined);
+}
+
+function strictDecimalNumber({
+  min,
+  positive,
+}: {
+  min?: number;
+  positive?: boolean;
+}) {
+  return z
+    .union([z.number(), z.string()])
+    .superRefine((value, ctx) => {
+      const parsed = parseStrictDecimal(value);
+      if (parsed === null) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Must be a valid decimal number",
+        });
+        return;
+      }
+      if (positive && !(parsed > 0)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Must be greater than zero",
+        });
+        return;
+      }
+      if (min !== undefined && parsed < min) {
+        ctx.addIssue({
+          code: "custom",
+          message: `Must be greater than or equal to ${min}`,
+        });
+      }
+    })
+    .transform((value) => parseStrictDecimal(value) as number);
 }
 
 export const contractInputSchema = z.object({
@@ -19,9 +56,9 @@ export const contractInputSchema = z.object({
 
 export const lineItemInputSchema = z.object({
   description: z.string().trim().min(1).max(2000),
-  quantity: z.coerce.number().positive(),
+  quantity: strictDecimalNumber({ positive: true }),
   quantityUnit: optionalText(50),
-  unitPrice: z.coerce.number().min(0),
+  unitPrice: strictDecimalNumber({ min: 0 }),
   pricingUnit: optionalText(50),
 });
 

@@ -12,16 +12,12 @@ export default async function OrganisationOverviewPage({
 }) {
   const { orgId } = await params;
   const queryClient = getQueryClient();
-  const organisation = await queryClient.fetchQuery(
+  void queryClient.prefetchQuery(
     trpc.organisation.get.queryOptions({ id: orgId }),
   );
   void queryClient.prefetchQuery(
     trpc.organisation.getAnalytics.queryOptions({ organisationId: orgId }),
   );
-
-  if (organisation.role !== "OWNER" && organisation.role !== "ADMIN") {
-    return null;
-  }
 
   return (
     <HydrateClient>

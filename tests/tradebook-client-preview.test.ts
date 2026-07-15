@@ -18,6 +18,13 @@ describe("money truncation", () => {
   it("multiplies with truncation", () => {
     expect(multiplyToMoney(3.333, 3.333)).toBe(11.1);
   });
+
+  it("rejects malformed decimals with multiple dots", () => {
+    expect(truncateMoney("2.2.2")).toBeNull();
+    expect(truncateMoney("12.34.56")).toBeNull();
+    expect(truncateMoney("2..2")).toBeNull();
+    expect(multiplyToMoney(2, "2.2.2")).toBeNull();
+  });
 });
 
 describe("client preview workbook", () => {

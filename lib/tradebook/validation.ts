@@ -1,6 +1,7 @@
 import { HyperFormula } from "hyperformula";
 
 import type { WorkbookMappingAnalysis } from "@/lib/tradebook/mapping";
+import { isStrictDecimalInput } from "@/lib/tradebook/money";
 import type {
   ParsedWorkbook,
   SheetSnapshot,
@@ -455,7 +456,18 @@ export function buildImportDraft({
           message: "Description must be text.",
         });
       }
-      if (!Number.isFinite(quantity) || quantity <= 0) {
+      const rawQuantity = value(row, lineAnalysis.mapping, "quantity");
+      const rawUnitPrice = value(row, lineAnalysis.mapping, "unitPrice");
+      if (!isStrictDecimalInput(rawQuantity)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "quantity"),
+          field: "quantity",
+          code: "INVALID_TYPE",
+          message: "Quantity must be a valid decimal number.",
+        });
+      } else if (quantity <= 0) {
         errors.push({
           sheet: lineSheet.name,
           row: rowNumber,
@@ -465,7 +477,16 @@ export function buildImportDraft({
           message: "Quantity must be greater than zero.",
         });
       }
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+      if (!isStrictDecimalInput(rawUnitPrice)) {
+        errors.push({
+          sheet: lineSheet.name,
+          row: rowNumber,
+          column: column(lineAnalysis.mapping, "unitPrice"),
+          field: "unitPrice",
+          code: "INVALID_TYPE",
+          message: "Unit price must be a valid decimal number.",
+        });
+      } else if (unitPrice < 0) {
         errors.push({
           sheet: lineSheet.name,
           row: rowNumber,

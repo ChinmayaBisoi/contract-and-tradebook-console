@@ -1,27 +1,33 @@
 import {
   buildClientPreviewWorkbook,
-  type ClientCellPatch,
-  type ClientSheetMapping,
   type ClientWorkbookData,
 } from "@/lib/tradebook/client-preview";
+import type {
+  PreviewWorkerRequest,
+  PreviewWorkerResponse,
+} from "@/components/imports/tradebook-preview-worker-types";
 
-export type PreviewWorkerRequest = {
-  data: ClientWorkbookData;
-  patches: ClientCellPatch[];
-  mappings: ClientSheetMapping[];
-  discardedContractRows: number[];
-  discardedLineItemRows: number[];
-  requestId: number;
-};
-
-export type PreviewWorkerResponse =
-  | { type: "complete"; requestId: number; data: ClientWorkbookData }
-  | { type: "error"; requestId: number; message: string };
+let cachedBaseData: ClientWorkbookData | null = null;
 
 self.onmessage = (event: MessageEvent<PreviewWorkerRequest>) => {
   const request = event.data;
+  if (request.type === "init") {
+    cachedBaseData = request.data;
+    return;
+  }
+
+  if (!cachedBaseData) {
+    const response: PreviewWorkerResponse = {
+      type: "error",
+      requestId: request.requestId,
+      message: "Workbook data has not been initialized.",
+    };
+    self.postMessage(response);
+    return;
+  }
+
   try {
-    const data = buildClientPreviewWorkbook(request.data, request.patches, {
+    const data = buildClientPreviewWorkbook(cachedBaseData, request.patches, {
       mappings: request.mappings,
       discardedContractRows: request.discardedContractRows,
       discardedLineItemRows: request.discardedLineItemRows,

@@ -190,6 +190,40 @@ describe("editable tradebook validation", () => {
     );
   });
 
+  it("rejects unit prices and quantities with multiple decimal points", () => {
+    const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
+    const draft = buildImportDraft({
+      parsed,
+      mapping,
+      selectedSourceOrganisationId: "ORG-001",
+      patches: [
+        { sheet: "Line Items", row: 2, column: 4, value: "1.2.3" },
+        { sheet: "Line Items", row: 2, column: 6, value: "2.2.2" },
+      ],
+    });
+
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        sheet: "Line Items",
+        row: 2,
+        column: 4,
+        field: "quantity",
+        code: "INVALID_TYPE",
+        message: "Quantity must be a valid decimal number.",
+      }),
+    );
+    expect(draft.errors).toContainEqual(
+      expect.objectContaining({
+        sheet: "Line Items",
+        row: 2,
+        column: 6,
+        field: "unitPrice",
+        code: "INVALID_TYPE",
+        message: "Unit price must be a valid decimal number.",
+      }),
+    );
+  });
+
   it("rejects non-text contract references during import", () => {
     const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
     const draft = buildImportDraft({

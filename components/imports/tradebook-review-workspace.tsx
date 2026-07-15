@@ -17,7 +17,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useLiveWorkbookPreview } from "@/components/imports/use-live-workbook-preview";
@@ -52,9 +52,6 @@ import {
 } from "@/lib/tradebook/client-preview";
 import {
   formatMoneyDisplay,
-  multiplyToMoney,
-  toRawScaled,
-  truncateMoney,
 } from "@/lib/tradebook/money";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
@@ -126,6 +123,8 @@ type MappingRow = {
   aiSuggested: boolean;
   inlineError: string | null;
 };
+
+const PATCH_DEBOUNCE_MS = 400;
 
 const roleLabels: Record<SheetRole, string> = {
   ORGANIZATIONS: "Organisations",
@@ -274,6 +273,8 @@ function SheetPreview({
   onPatch: (patch: CellPatch) => void;
   onDiscard: (row: number) => void;
 }) {
+  const patchTimersRef = useRef<Map<string, number>>(new Map());
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
   const sheetSnapshot = workbook.sheets.find((entry) => entry.name === sheet.name);
   const rows = useMemo(() => {
     if (!sheetSnapshot) return [];
@@ -311,6 +312,71 @@ function SheetPreview({
   const footerRows = new Set(sheetSnapshot?.footerRows ?? []);
   const moneyColumns = moneyFieldSet(sheet.role, sheet.mapping);
 
+  useEffect(() => {
+    setDraftValues({});
+    for (const timer of patchTimersRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    patchTimersRef.current.clear();
+  }, [sheet.name]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of patchTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      patchTimersRef.current.clear();
+    };
+  }, []);
+
+  const flushPatch = useCallback(
+    (row: number, column: number, value: string) => {
+      onPatch({
+        sheet: sheet.name,
+        row,
+        column,
+        value,
+      });
+    },
+    [onPatch, sheet.name],
+  );
+
+  const handleCellChange = useCallback(
+    (row: number, column: number, value: string) => {
+      const key = `${row}:${column}`;
+      setDraftValues((current) => ({ ...current, [key]: value }));
+
+      const existing = patchTimersRef.current.get(key);
+      if (existing) window.clearTimeout(existing);
+
+      const timer = window.setTimeout(() => {
+        flushPatch(row, column, value);
+      }, PATCH_DEBOUNCE_MS);
+
+      patchTimersRef.current.set(key, timer);
+    },
+    [flushPatch],
+  );
+
+  const handleCellBlur = useCallback(
+    (row: number, column: number, value: string) => {
+      const key = `${row}:${column}`;
+      const existing = patchTimersRef.current.get(key);
+      if (existing) {
+        window.clearTimeout(existing);
+      }
+      patchTimersRef.current.delete(key);
+      flushPatch(row, column, value);
+      setDraftValues((current) => {
+        if (!(key in current)) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    },
+    [flushPatch],
+  );
+
   const rowValidation = useMemo(() => {
     const byRow = new Map<number, ValidationError[]>();
     const byCell = new Map<string, ValidationError[]>();
@@ -325,37 +391,6 @@ function SheetPreview({
     return { byRow, byCell };
   }, [validationErrors, sheet.name]);
 
-  const lineItemMismatches = useMemo(() => {
-    if (sheet.role !== "LINE_ITEMS") return [];
-    const quantityColumn = sheet.mapping.quantity;
-    const unitPriceColumn = sheet.mapping.unitPrice;
-    const totalColumn = sheet.mapping.total;
-    if (
-      quantityColumn === undefined ||
-      unitPriceColumn === undefined ||
-      totalColumn === undefined
-    ) {
-      return [];
-    }
-    return rows
-      .filter((row) => !footerRows.has(row.rowNumber) && !discarded.has(row.rowNumber))
-      .filter((row) => {
-        const quantity = toRawScaled(row.values[quantityColumn]);
-        const unitPrice = toRawScaled(row.values[unitPriceColumn]);
-        const totalRaw = toRawScaled(row.values[totalColumn]);
-        if (quantity === null || unitPrice === null || totalRaw === null) {
-          return false;
-        }
-        const computed = multiplyToMoney(
-          row.values[quantityColumn],
-          row.values[unitPriceColumn],
-        );
-        const provided = truncateMoney(row.values[totalColumn]);
-        return computed !== null && provided !== null && computed !== provided;
-      })
-      .map((row) => row.rowNumber);
-  }, [discarded, footerRows, rows, sheet.mapping, sheet.role]);
-
   if (!sheetSnapshot) {
     return (
       <p className="p-6 text-sm text-muted-foreground">
@@ -366,18 +401,6 @@ function SheetPreview({
 
   return (
     <div className="space-y-3">
-      {/* {lineItemMismatches.length > 0 ? (
-        <Alert className="mx-4 border-amber-300 bg-amber-50/70 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-          <AlertTriangleIcon aria-hidden="true" />
-          <AlertTitle>Total mismatch hints</AlertTitle>
-          <AlertDescription>
-            {lineItemMismatches.length} rows have `quantity x unit price`
-            different from total. Rows:{" "}
-            {lineItemMismatches.slice(0, 8).join(", ")}
-            {lineItemMismatches.length > 8 ? ", ..." : ""}.
-          </AlertDescription>
-        </Alert>
-      ) : null} */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-4">
         <p className="text-xs text-muted-foreground">
           {rows.length.toLocaleString()} rows loaded in browser
@@ -444,6 +467,9 @@ function SheetPreview({
                       ) ?? [];
                     const value = row.values[columnIndex];
                     const asMoney = moneyColumns.has(columnIndex);
+                    const cellKey = `${row.rowNumber}:${columnIndex + 1}`;
+                    const cellValue =
+                      draftValues[cellKey] ?? displayValue(value, asMoney);
                     return (
                       <TableCell
                         key={columnNumber}
@@ -472,15 +498,21 @@ function SheetPreview({
                             aria-label={`${sheet.name} row ${row.rowNumber} column ${columnIndex + 1}`}
                             aria-invalid={cellIssues.length > 0}
                             className="h-7 w-full border-transparent bg-transparent px-1.5 shadow-none focus-visible:bg-background"
-                            value={displayValue(value, asMoney)}
-                            onChange={(event) =>
-                              onPatch({
-                                sheet: sheet.name,
-                                row: row.rowNumber,
-                                column: columnIndex + 1,
-                                value: event.target.value,
-                              })
-                            }
+                            value={cellValue}
+                            onChange={(event) => {
+                              handleCellChange(
+                                row.rowNumber,
+                                columnIndex + 1,
+                                event.target.value,
+                              );
+                            }}
+                            onBlur={(event) => {
+                              handleCellBlur(
+                                row.rowNumber,
+                                columnIndex + 1,
+                                event.target.value,
+                              );
+                            }}
                           />
                         )}
                       </TableCell>
@@ -601,6 +633,14 @@ export function TradebookReviewWorkspace({
     discardedLineItemRows,
     enabled: hasValidatedMapping && Boolean(baseWorkbook),
   });
+  const discardedRows = useMemo(() => {
+    if (!selectedSheet) return new Set<number>();
+    return new Set(
+      selectedSheet.role === "SUMMARY"
+        ? discardedContractRows
+        : discardedLineItemRows,
+    );
+  }, [discardedContractRows, discardedLineItemRows, selectedSheet]);
   const suggestionLookup = useMemo(
     () =>
       new Map(
@@ -1278,13 +1318,7 @@ export function TradebookReviewWorkspace({
                   allMappings={previewMappings}
                   selectedSourceOrganisationId={selectedSourceOrganisationId}
                   sheet={selectedSheet}
-                  discarded={
-                    new Set(
-                      selectedSheet.role === "SUMMARY"
-                        ? discardedContractRows
-                        : discardedLineItemRows,
-                    )
-                  }
+                  discarded={discardedRows}
                   disabled={failed}
                   validationErrors={validationErrors}
                   isRecalculating={isRecalculating}
