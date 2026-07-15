@@ -1,7 +1,6 @@
 import "server-only";
 
 import { logger } from "@/lib/logger";
-import { isNeonDatabase } from "@/lib/prisma";
 
 const DEFAULT_WARM_COOLDOWN_MS = 5 * 60_000;
 
@@ -11,7 +10,6 @@ type DbWarmerState = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __contractviewDbWarmerState: DbWarmerState | undefined;
 }
 
@@ -40,7 +38,7 @@ function getWarmCooldownMs() {
   return parsed;
 }
 
-function shouldWarmDatabase() {
+async function shouldWarmDatabase() {
   if (process.env.NODE_ENV !== "production") {
     return false;
   }
@@ -50,11 +48,12 @@ function shouldWarmDatabase() {
     return false;
   }
 
+  const { isNeonDatabase } = await import("@/lib/prisma");
   return isNeonDatabase(connectionString);
 }
 
 export async function warmDatabaseIfNeeded() {
-  if (!shouldWarmDatabase()) {
+  if (!(await shouldWarmDatabase())) {
     return;
   }
 

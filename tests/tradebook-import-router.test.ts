@@ -16,6 +16,7 @@ function caller(db: Record<string, unknown>) {
 describe("tradebook import upload procedures", () => {
   it("creates the organisation-scoped database record before upload", async () => {
     const create = vi.fn().mockResolvedValue({ id: "upload_1" });
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const api = caller({
       organisationUser: {
         findUnique: vi.fn().mockResolvedValue({
@@ -24,6 +25,7 @@ describe("tradebook import upload procedures", () => {
         }),
       },
       upload: { create },
+      auditEvent: { create: auditCreate },
     });
 
     await expect(
@@ -49,6 +51,16 @@ describe("tradebook import upload procedures", () => {
       },
       select: { id: true },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "CREATE",
+          entityType: "UPLOAD",
+          entityId: "upload_1",
+          afterState: expect.objectContaining({ status: "PENDING" }),
+        }),
+      }),
+    );
   });
 
   it("rejects non-xlsx and oversized workbook records", async () => {
@@ -87,6 +99,7 @@ describe("tradebook import upload procedures", () => {
 
   it("marks only the current uploader's organisation record as failed", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const api = caller({
       organisationUser: {
         findUnique: vi.fn().mockResolvedValue({
@@ -95,6 +108,7 @@ describe("tradebook import upload procedures", () => {
         }),
       },
       upload: { updateMany },
+      auditEvent: { create: auditCreate },
     });
 
     await expect(
@@ -118,6 +132,16 @@ describe("tradebook import upload procedures", () => {
         failureMessage: "The private upload could not be completed.",
       },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "STATUS_CHANGE",
+          entityType: "UPLOAD",
+          entityId: "upload_1",
+          afterState: expect.objectContaining({ status: "FAILED" }),
+        }),
+      }),
+    );
   });
 
   it("does not disclose an upload outside the organisation boundary", async () => {

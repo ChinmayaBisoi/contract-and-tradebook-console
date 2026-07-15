@@ -54,6 +54,49 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
 }
 
 describe("contract and line item routers", () => {
+  it("creates draft contracts and records a create event", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.create.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: "Net 30",
+      deliveryTerms: "FOB",
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.contract.create({
+      organisationId: "org_1",
+      contract: {
+        clientName: "Acme",
+        poRefNo: "PO-1",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        paymentTerms: "Net 30",
+        deliveryTerms: "FOB",
+      },
+    });
+
+    expect(result).toMatchObject({ id: "contract_1", status: "DRAFT" });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "CREATE",
+          entityType: "CONTRACT",
+          afterState: expect.objectContaining({ status: "DRAFT" }),
+        }),
+      }),
+    );
+  });
+
   it("returns derived contract totals on contract reads", async () => {
     const { db, tx } = createDb({});
     tx.contract.findFirst.mockResolvedValue({
@@ -124,6 +167,151 @@ describe("contract and line item routers", () => {
       message: "Only draft contracts can be modified.",
     });
     expect(tx.contract.update).not.toHaveBeenCalled();
+  });
+
+  it("finalizes draft contracts and records a status change event", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+    tx.contract.update.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "FINALIZED",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.contract.updateStatus({
+      organisationId: "org_1",
+      id: "contract_1",
+      status: "FINALIZED",
+    });
+
+    expect(result).toMatchObject({ status: "FINALIZED" });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "STATUS_CHANGE",
+          entityType: "CONTRACT",
+          beforeState: { status: "DRAFT" },
+          afterState: { status: "FINALIZED" },
+        }),
+      }),
+    );
+  });
+
+  it("archives finalized contracts and records a status change event", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "FINALIZED",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+    tx.contract.update.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "ARCHIVED",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.contract.updateStatus({
+      organisationId: "org_1",
+      id: "contract_1",
+      status: "ARCHIVED",
+    });
+
+    expect(result).toMatchObject({ status: "ARCHIVED" });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "STATUS_CHANGE",
+          entityType: "CONTRACT",
+          beforeState: { status: "FINALIZED" },
+          afterState: { status: "ARCHIVED" },
+        }),
+      }),
+    );
+  });
+
+  it("rejects invalid contract status transitions", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    const caller = createCaller(db);
+    await expect(
+      caller.contract.updateStatus({
+        organisationId: "org_1",
+        id: "contract_1",
+        status: "ARCHIVED",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Contract status cannot change from DRAFT to ARCHIVED.",
+    });
+
+    expect(tx.contract.update).not.toHaveBeenCalled();
+    expect(tx.auditEvent.create).not.toHaveBeenCalled();
   });
 
   it("updates draft contracts and records an update event", async () => {
@@ -223,6 +411,91 @@ describe("contract and line item routers", () => {
       message: "Only draft contracts can be modified.",
     });
     expect(tx.lineItem.create).not.toHaveBeenCalled();
+  });
+
+  it("creates line items for draft contracts and records a create event", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst
+      .mockResolvedValueOnce({
+        id: "contract_1",
+        organisationId: "org_1",
+        clientName: "Acme",
+        poRefNo: "PO-1",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        status: "DRAFT",
+        paymentTerms: null,
+        deliveryTerms: null,
+        lineItems: [],
+      })
+      .mockResolvedValueOnce({
+        id: "contract_1",
+        organisationId: "org_1",
+        status: "DRAFT",
+        clientName: "Acme",
+        poRefNo: "PO-1",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        paymentTerms: null,
+        deliveryTerms: null,
+        lineItems: [
+          {
+            description: "Steel bolts",
+            quantity: { toString: () => "20" },
+            quantityUnit: "pcs",
+            unitPrice: { toString: () => "10" },
+            pricingUnit: "pcs",
+            total: { toString: () => "200" },
+          },
+        ],
+      });
+    tx.lineItem.create.mockResolvedValue({
+      id: "line_1",
+      contractId: "contract_1",
+      workbookItemId: null,
+      description: "Steel bolts",
+      quantity: { toString: () => "20" },
+      quantityUnit: "pcs",
+      unitPrice: { toString: () => "10" },
+      pricingUnit: "pcs",
+      total: { toString: () => "200" },
+      sortOrder: 0,
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      upload: null,
+      contract: {
+        id: "contract_1",
+        poRefNo: "PO-1",
+        clientName: "Acme",
+        sourceType: "JSON",
+        organisationId: "org_1",
+        status: "DRAFT",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        paymentTerms: null,
+        deliveryTerms: null,
+      },
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.lineItem.create({
+      organisationId: "org_1",
+      contractId: "contract_1",
+      lineItem: {
+        description: "Steel bolts",
+        quantity: 20,
+        quantityUnit: "pcs",
+        unitPrice: 10,
+        pricingUnit: "pcs",
+      },
+    });
+
+    expect(result).toMatchObject({ id: "line_1", total: "200" });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "CREATE",
+          entityType: "LINE_ITEM",
+          entityId: "line_1",
+        }),
+      }),
+    );
   });
 
   it("updates line items for draft contracts", async () => {

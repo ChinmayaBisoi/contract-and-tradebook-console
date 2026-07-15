@@ -421,6 +421,68 @@ describe("organisation details router", () => {
     });
   });
 
+  it("records status changes when owners disable members", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
+    const update = vi.fn().mockResolvedValue({
+      id: "membership_1",
+      clerkUserId: "member_1",
+      clerkUserName: "Member User",
+      clerkUserEmail: "member@example.com",
+      status: "DISABLED",
+      role: "MEMBER",
+    });
+    const tx = {
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "membership_1",
+          clerkUserId: "member_1",
+          clerkUserName: "Member User",
+          clerkUserEmail: "member@example.com",
+          ...activeMembership("MEMBER"),
+        }),
+        count: vi.fn(),
+        update,
+      },
+      auditEvent: { create: auditCreate },
+    };
+    const caller = createCaller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue(activeMembership()),
+      },
+      $transaction: vi.fn(
+        async (operation: (client: typeof tx) => Promise<unknown>) =>
+          operation(tx),
+      ),
+    });
+
+    await expect(
+      caller.organisation.updateMemberStatus({
+        organisationId: "org_1",
+        clerkUserId: "member_1",
+        status: "DISABLED",
+      }),
+    ).resolves.toMatchObject({ clerkUserId: "member_1", status: "DISABLED" });
+
+    expect(update).toHaveBeenCalledWith({
+      where: {
+        clerkUserId_organisationId: {
+          clerkUserId: "member_1",
+          organisationId: "org_1",
+        },
+      },
+      data: expect.objectContaining({ status: "DISABLED" }),
+    });
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "STATUS_CHANGE",
+        entityType: "ORGANISATION_USER",
+        beforeState: { role: "MEMBER", status: "ACTIVE" },
+        afterState: { role: "MEMBER", status: "DISABLED" },
+        changedFields: ["status"],
+      }),
+    });
+  });
+
   it("records member removal as a delete with only the prior snapshot", async () => {
     const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const tx = {

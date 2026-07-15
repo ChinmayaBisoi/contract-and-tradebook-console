@@ -70,6 +70,7 @@ describe("private tradebook upload lifecycle", () => {
       organisationId: "org_1",
       uploadId: "upload_1",
       clerkUserId: "member_1",
+      actorRole: "MEMBER",
     });
 
     expect(findFirst).toHaveBeenCalledWith({
@@ -87,7 +88,12 @@ describe("private tradebook upload lifecycle", () => {
   it("atomically links the private object and initializes its import", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const upsert = vi.fn().mockResolvedValue({ id: "import_1" });
-    const tx = { upload: { updateMany }, tradebookImport: { upsert } };
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
+    const tx = {
+      upload: { updateMany },
+      tradebookImport: { upsert },
+      auditEvent: { create: auditCreate },
+    };
     const db = {
       ...tx,
       $transaction: vi.fn(
@@ -101,6 +107,7 @@ describe("private tradebook upload lifecycle", () => {
         organisationId: "org_1",
         uploadId: "upload_1",
         clerkUserId: "member_1",
+        actorRole: "MEMBER",
         storageKey: "private-key",
         privateUrl: "https://utfs.io/f/private-key",
       }),
@@ -134,12 +141,24 @@ describe("private tradebook upload lifecycle", () => {
       update: {},
       select: { id: true },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "STATUS_CHANGE",
+          entityType: "UPLOAD",
+          entityId: "upload_1",
+          beforeState: { status: "PENDING" },
+          afterState: { status: "UPLOADED" },
+        }),
+      }),
+    );
   });
 
   it("rejects a callback that no longer owns a pending record", async () => {
     const tx = {
       upload: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       tradebookImport: { upsert: vi.fn() },
+      auditEvent: { create: vi.fn() },
     };
     const db = {
       ...tx,

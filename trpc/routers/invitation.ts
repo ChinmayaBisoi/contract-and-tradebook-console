@@ -46,6 +46,7 @@ type InvitationRecord = {
 };
 
 type MembershipRecord = {
+  id?: string;
   role: OrganisationUserRole;
   status: OrganisationUserStatus;
 };
@@ -607,7 +608,21 @@ export const invitationRouter = createTRPCRouter({
 
       const updated = await runInvitationWrite(() =>
         runInvitationTransaction(db, async (tx) => {
-          await tx.organisationUser.upsert({
+          const existingMembership = await tx.organisationUser.findUnique({
+            where: {
+              clerkUserId_organisationId: {
+                clerkUserId: ctx.auth.clerkUserId,
+                organisationId: invitation.organisationId,
+              },
+            },
+            select: {
+              id: true,
+              role: true,
+              status: true,
+            },
+          });
+
+          const membership = (await tx.organisationUser.upsert({
             where: {
               clerkUserId_organisationId: {
                 clerkUserId: ctx.auth.clerkUserId,
@@ -630,6 +645,32 @@ export const invitationRouter = createTRPCRouter({
               status: "ACTIVE",
               statusChangedAt: new Date(),
             },
+            select: { id: true, role: true, status: true },
+          })) as MembershipRecord & { id: string };
+
+          const membershipAuditAction = existingMembership
+            ? "STATUS_CHANGE"
+            : "CREATE";
+          const membershipBeforeState = existingMembership
+            ? { role: existingMembership.role, status: existingMembership.status }
+            : undefined;
+          const membershipAfterState = {
+            role: invitation.role,
+            status: "ACTIVE" as const,
+          };
+
+          await writeInvitationAudit(tx, {
+            organisationId: invitation.organisationId,
+            actor: auditActor(ctx.auth),
+            actorRole: invitation.role,
+            action: membershipAuditAction,
+            entityType: "ORGANISATION_USER",
+            entityId: membership.id,
+            entityLabel:
+              ctx.auth.name ?? normalizeEmail(ctx.auth.email) ?? ctx.auth.clerkUserId,
+            ...(membershipBeforeState ? { beforeState: membershipBeforeState } : {}),
+            afterState: membershipAfterState,
+            organisationUserId: membership.id,
           });
 
           const updated = await tx.invitation.update({

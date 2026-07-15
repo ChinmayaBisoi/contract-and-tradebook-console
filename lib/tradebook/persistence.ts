@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { buildAuditData } from "@/lib/audit";
 import {
   buildContractFieldData,
   toFieldDataItem,
@@ -220,55 +221,60 @@ export async function persistReviewedDraft({
     createdAt: now,
     updatedAt: now,
   }));
+
+  const actorSnapshot = {
+    clerkUserId: actor.clerkUserId,
+    name: actor.name,
+    email: actor.email,
+  };
+  const createSqlAuditRow = (
+    input: Omit<
+      Parameters<typeof buildAuditData>[0],
+      "actor" | "organisationId" | "actorRole"
+    >,
+  ) => ({
+    id: randomUUID(),
+    ...buildAuditData({
+      organisationId,
+      actor: actorSnapshot,
+      actorRole,
+      ...input,
+    }),
+    occurredAt: now,
+  });
+
   const audits = [
-    ...contracts.map((contract) => ({
-      id: randomUUID(),
-      organisationId,
-      actorClerkUserId: actor.clerkUserId,
-      actorName: actor.name ?? actor.email,
-      actorEmail: actor.email,
-      actorRole,
-      action: "CREATE",
-      entityType: "CONTRACT",
-      entityId: contract.id,
-      entityLabel: contract.poRefNo,
-      beforeState: null,
-      afterState: {
-        clientName: contract.clientName,
-        poRefNo: contract.poRefNo,
-        status: contract.status,
-      },
-      changedFields: ["clientName", "poRefNo", "status"],
-      metadata: { source: "TRADEBOOK_IMPORT" },
-      contractId: contract.id,
-      uploadId,
-      tradebookImportId: importId,
-      occurredAt: now,
-    })),
-    {
-      id: randomUUID(),
-      organisationId,
-      actorClerkUserId: actor.clerkUserId,
-      actorName: actor.name ?? actor.email,
-      actorEmail: actor.email,
-      actorRole,
+    ...contracts.map((contract) =>
+      createSqlAuditRow({
+        action: "CREATE",
+        entityType: "CONTRACT",
+        entityId: contract.id,
+        entityLabel: contract.poRefNo,
+        afterState: {
+          clientName: contract.clientName,
+          poRefNo: contract.poRefNo,
+          status: contract.status,
+        },
+        metadata: { source: "TRADEBOOK_IMPORT" },
+        contractId: contract.id,
+        uploadId,
+        tradebookImportId: importId,
+      }),
+    ),
+    createSqlAuditRow({
       action: "IMPORT",
       entityType: "TRADEBOOK_IMPORT",
       entityId: importId,
       entityLabel: `Tradebook import ${importId}`,
-      beforeState: null,
       afterState: {
         status: "IMPORTED",
         contractCount: contracts.length,
         lineItemCount: lineItems.length,
       },
-      changedFields: ["status", "contractCount", "lineItemCount"],
       metadata: { discardedCount: draft.discardedCount },
-      contractId: null,
       uploadId,
       tradebookImportId: importId,
-      occurredAt: now,
-    },
+    }),
   ];
 
   const queries: SqlQuery[] = [

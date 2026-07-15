@@ -422,9 +422,9 @@ export const lineItemRouter = createTRPCRouter({
               contractId: contract.id,
               description: input.lineItem.description,
               quantity: new Prisma.Decimal(input.lineItem.quantity),
-              quantityUnit: input.lineItem.quantityUnit,
+              quantityUnit: input.lineItem.quantityUnit ?? null,
               unitPrice: new Prisma.Decimal(input.lineItem.unitPrice),
-              pricingUnit: input.lineItem.pricingUnit,
+              pricingUnit: input.lineItem.pricingUnit ?? null,
               total: new Prisma.Decimal(
                 input.lineItem.quantity * input.lineItem.unitPrice,
               ),

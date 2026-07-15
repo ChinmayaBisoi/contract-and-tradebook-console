@@ -95,6 +95,15 @@ describe("atomic reviewed import persistence", () => {
       ),
     ).toBe(true);
     expect(
+      lineItems.some(
+        (row: Record<string, unknown>) =>
+          typeof row.quantityUnit === "string" &&
+          row.quantityUnit.length > 0 &&
+          typeof row.pricingUnit === "string" &&
+          row.pricingUnit.length > 0,
+      ),
+    ).toBe(true);
+    expect(
       audits.filter(
         (row: Record<string, unknown>) => row.entityType === "CONTRACT",
       ),

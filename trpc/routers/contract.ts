@@ -61,6 +61,12 @@ const contractDeleteInput = z.object({
   id: z.string().min(1),
 });
 
+const contractUpdateStatusInput = z.object({
+  organisationId: z.string().min(1),
+  id: z.string().min(1),
+  status: z.enum(["FINALIZED", "ARCHIVED"]),
+});
+
 type ContractListRow = {
   id: string;
   clientName: string;
@@ -194,6 +200,21 @@ function mapContract(contract: ContractWithRelations) {
       items: readItemsFromFieldData(contract.fieldData),
     },
   };
+}
+
+function validateContractStatusTransition({
+  current,
+  next,
+}: {
+  current: "DRAFT" | "FINALIZED" | "ARCHIVED";
+  next: "FINALIZED" | "ARCHIVED";
+}) {
+  if (current === "DRAFT" && next === "FINALIZED") return;
+  if (current === "FINALIZED" && next === "ARCHIVED") return;
+  throw new TRPCError({
+    code: "CONFLICT",
+    message: `Contract status cannot change from ${current} to ${next}.`,
+  });
 }
 
 export const contractRouter = createTRPCRouter({
@@ -385,6 +406,7 @@ export const contractRouter = createTRPCRouter({
               clientName: created.clientName,
               poRefNo: created.poRefNo,
               poDate: created.poDate,
+              status: created.status,
               sourceType: created.sourceType,
             },
           });
@@ -498,6 +520,84 @@ export const contractRouter = createTRPCRouter({
           entityId: updated.id,
           organisationId: input.organisationId,
           contractId: updated.id,
+        });
+
+        return updated;
+      } catch (error) {
+        return mapWriteError(error);
+      }
+    }),
+
+  updateStatus: protectedProcedure
+    .input(contractUpdateStatusInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      const membership = await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:update",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+
+      try {
+        const updated = await db.$transaction(async (tx) => {
+          const existing = await tx.contract.findFirst({
+            where: { id: input.id, organisationId: input.organisationId },
+            include: {
+              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+            },
+          });
+
+          if (!existing) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Contract was not found in this organisation.",
+            });
+          }
+
+          validateContractStatusTransition({
+            current: existing.status,
+            next: input.status,
+          });
+
+          const now = new Date();
+          const updated = await tx.contract.update({
+            where: { id: existing.id },
+            data: {
+              status: input.status,
+              finalizedAt: input.status === "FINALIZED" ? now : null,
+              archivedAt: input.status === "ARCHIVED" ? now : null,
+            },
+            include: {
+              lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+              auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+            },
+          });
+
+          await writeAuditEvent(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "STATUS_CHANGE",
+            entityType: "CONTRACT",
+            entityId: updated.id,
+            entityLabel: updated.poRefNo,
+            contractId: updated.id,
+            beforeState: { status: existing.status },
+            afterState: { status: updated.status },
+          });
+
+          return mapContract(updated);
+        });
+
+        publishRealtimeEvent({
+          entity: "contract",
+          action: "updated",
+          entityId: updated.id,
+          organisationId: input.organisationId,
+          contractId: updated.id,
+          status: updated.status,
         });
 
         return updated;

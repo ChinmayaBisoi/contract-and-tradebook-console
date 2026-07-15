@@ -104,6 +104,7 @@ describe("organisation operations routers", () => {
           id: "contract_1",
           poRefNo: "PO-100",
           clientName: "Acme Trading",
+          total: { toString: () => "24" },
         }),
       },
       lineItem: { findMany, count: vi.fn().mockResolvedValue(1) },

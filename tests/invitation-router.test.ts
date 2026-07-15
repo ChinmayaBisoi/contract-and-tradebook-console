@@ -239,6 +239,7 @@ describe("invitation router", () => {
   it("expires stale pending rows before creating a replacement invitation", async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const create = vi.fn().mockResolvedValue({ id: "invite_replacement" });
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const caller = createCaller({
       organisationUser: {
         findUnique: vi.fn().mockResolvedValue({
@@ -252,6 +253,24 @@ describe("invitation router", () => {
         findFirst: vi.fn().mockResolvedValue(null),
         create,
       },
+      auditEvent: { create: auditCreate },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback({
+          organisationUser: {
+            findUnique: vi.fn().mockResolvedValue({
+              role: "OWNER",
+              status: "ACTIVE",
+            }),
+            findFirst: vi.fn().mockResolvedValue(null),
+          },
+          invitation: {
+            updateMany,
+            findFirst: vi.fn().mockResolvedValue(null),
+            create,
+          },
+          auditEvent: { create: auditCreate },
+        }),
+      ),
     });
 
     await expect(
@@ -306,6 +325,7 @@ describe("invitation router", () => {
   });
 
   it("edits a pending invitation when the requester has permission", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const update = vi.fn().mockResolvedValue({
       id: "invite_1",
       role: "MEMBER",
@@ -329,6 +349,15 @@ describe("invitation router", () => {
           status: "ACTIVE",
         }),
       },
+      auditEvent: { create: auditCreate },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback({
+          invitation: {
+            update,
+          },
+          auditEvent: { create: auditCreate },
+        }),
+      ),
     });
 
     await expect(
@@ -345,6 +374,15 @@ describe("invitation router", () => {
         expiresAt: new Date("2099-07-28T12:00:00.000Z"),
       },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "UPDATE",
+          entityType: "INVITATION",
+          entityId: "invite_1",
+        }),
+      }),
+    );
   });
 
   it("translates a stale invitation update into a conflict", async () => {
@@ -380,7 +418,7 @@ describe("invitation router", () => {
     });
   });
 
-  it("accepts an invitation and reactivates membership in one transaction", async () => {
+  it("accepts an invitation and records member creation in one transaction", async () => {
     const invitation = {
       id: "invite_1",
       email: "member@example.com",
@@ -390,15 +428,18 @@ describe("invitation router", () => {
       expiresAt: new Date("2099-07-21T12:00:00.000Z"),
     };
     const upsert = vi.fn().mockResolvedValue({ id: "membership_1" });
+    const findMembership = vi.fn().mockResolvedValue(null);
     const update = vi
       .fn()
       .mockResolvedValue({ ...invitation, status: "ACCEPTED" });
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const db = {
       invitation: {
         findUnique: vi.fn().mockResolvedValue(invitation),
         update,
       },
-      organisationUser: { upsert },
+      organisationUser: { findUnique: findMembership, upsert },
+      auditEvent: { create: auditCreate },
       $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
         callback(db),
       ),
@@ -424,9 +465,84 @@ describe("invitation router", () => {
           role: "MEMBER",
           status: "ACTIVE",
         }),
+        select: { id: true, role: true, status: true },
+      }),
+    );
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "CREATE",
+          entityType: "ORGANISATION_USER",
+          organisationUserId: "membership_1",
+          afterState: { role: "MEMBER", status: "ACTIVE" },
+        }),
+      }),
+    );
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "ACCEPT",
+          entityType: "INVITATION",
+          entityId: "invite_1",
+        }),
       }),
     );
     expect(db.$transaction).toHaveBeenCalledOnce();
+  });
+
+  it("records membership status change when accepting with existing membership", async () => {
+    const invitation = {
+      id: "invite_1",
+      email: "member@example.com",
+      organisationId: "org_1",
+      role: "ADMIN",
+      status: "PENDING",
+      expiresAt: new Date("2099-07-21T12:00:00.000Z"),
+    };
+    const upsert = vi
+      .fn()
+      .mockResolvedValue({ id: "membership_1", role: "ADMIN", status: "ACTIVE" });
+    const update = vi
+      .fn()
+      .mockResolvedValue({ ...invitation, status: "ACCEPTED" });
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
+    const db = {
+      invitation: {
+        findUnique: vi.fn().mockResolvedValue(invitation),
+        update,
+      },
+      organisationUser: {
+        findUnique: vi
+          .fn()
+          .mockResolvedValue({ id: "membership_1", role: "MEMBER", status: "DISABLED" }),
+        upsert,
+      },
+      auditEvent: { create: auditCreate },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback(db),
+      ),
+    };
+    const caller = createCaller(db, {
+      clerkUserId: "member_1",
+      email: "member@example.com",
+      name: "Member User",
+    });
+
+    await expect(
+      caller.invitation.accept({ id: "invite_1" }),
+    ).resolves.toMatchObject({ status: "ACCEPTED" });
+
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "STATUS_CHANGE",
+          entityType: "ORGANISATION_USER",
+          organisationUserId: "membership_1",
+          beforeState: { role: "MEMBER", status: "DISABLED" },
+          afterState: { role: "ADMIN", status: "ACTIVE" },
+        }),
+      }),
+    );
   });
 
   it("rejects acceptance when the signed-in email does not match", async () => {
@@ -526,6 +642,7 @@ describe("invitation router", () => {
   });
 
   it("lets the recipient decline a pending invitation", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const update = vi.fn().mockResolvedValue({
       id: "invite_1",
       status: "DECLINED",
@@ -543,6 +660,13 @@ describe("invitation router", () => {
           }),
           update,
         },
+        auditEvent: { create: auditCreate },
+        $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+          callback({
+            invitation: { update },
+            auditEvent: { create: auditCreate },
+          }),
+        ),
       },
       {
         clerkUserId: "member_1",
@@ -558,9 +682,19 @@ describe("invitation router", () => {
       where: { id: "invite_1", status: "PENDING" },
       data: { status: "DECLINED" },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "DECLINE",
+          entityType: "INVITATION",
+          entityId: "invite_1",
+        }),
+      }),
+    );
   });
 
   it("allows only owners to cancel pending invitations", async () => {
+    const auditCreate = vi.fn().mockResolvedValue({ id: "audit_1" });
     const update = vi.fn().mockResolvedValue({
       id: "invite_1",
       status: "CANCELLED",
@@ -583,6 +717,13 @@ describe("invitation router", () => {
           status: "ACTIVE",
         }),
       },
+      auditEvent: { create: auditCreate },
+      $transaction: vi.fn(async (callback: (tx: unknown) => unknown) =>
+        callback({
+          invitation: { update },
+          auditEvent: { create: auditCreate },
+        }),
+      ),
     });
 
     await expect(
@@ -592,5 +733,14 @@ describe("invitation router", () => {
       where: { id: "invite_1", status: "PENDING" },
       data: { status: "CANCELLED" },
     });
+    expect(auditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "CANCEL",
+          entityType: "INVITATION",
+          entityId: "invite_1",
+        }),
+      }),
+    );
   });
 });
