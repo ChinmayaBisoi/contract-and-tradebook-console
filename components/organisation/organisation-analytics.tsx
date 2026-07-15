@@ -370,6 +370,11 @@ export function OrganisationAnalytics({
       ? `Contract value by PO date from ${longDateFormatter.format(activeRange.from)} to ${longDateFormatter.format(activeRange.to)}.`
       : "Contract value by PO date.";
   const timelinePoints = timelineAnalytics?.contractsOverTime ?? [];
+  const selectedContractLabel =
+    contractId === "all"
+      ? "All contracts"
+      : baseAnalytics.contractOptions.find((option) => option.id === contractId)
+          ?.label ?? "Selected contract";
 
   return (
     <section
@@ -483,7 +488,9 @@ export function OrganisationAnalytics({
               onValueChange={(value) => setContractId(value ?? "all")}
             >
               <SelectTrigger id="analytics-contract-filter" className="w-full">
-                <SelectValue placeholder="All contracts" />
+                <SelectValue placeholder="All contracts">
+                  {selectedContractLabel}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent align="start" className="w-[var(--anchor-width)]">
                 <SelectItem value="all">All contracts</SelectItem>

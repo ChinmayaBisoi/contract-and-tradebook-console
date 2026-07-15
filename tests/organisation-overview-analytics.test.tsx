@@ -148,6 +148,19 @@ describe("Organisation overview analytics", () => {
     });
   });
 
+  it("shows the contract label in the trigger after a contract is selected", async () => {
+    const user = userEvent.setup();
+    renderAnalytics();
+
+    await screen.findByText("Contract value over time");
+    await user.click(screen.getByRole("combobox", { name: "Contract" }));
+    await user.click(screen.getAllByText("PO-001 - Acme")[0]!);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("PO-001 - Acme")[0]).toBeInTheDocument();
+    });
+  });
+
   it("refetches the timeline when the date preset changes", async () => {
     const user = userEvent.setup();
     renderAnalytics();
