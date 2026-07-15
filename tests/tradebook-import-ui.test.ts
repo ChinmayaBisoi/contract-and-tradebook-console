@@ -55,7 +55,7 @@ describe("tradebook import pages", () => {
     expect(source).toContain("Manual column mapping");
     expect(source).toContain("data.review.patches");
     expect(source).toContain("sourceOrganisations.length === 1");
-    expect(source).toContain("useTradebookImportEvents");
+    expect(source).toContain("useOrganisationEvents");
     expect(source).toContain("saveReview");
     expect(source).toContain("discardedContractRows");
     expect(source).toContain("discardedLineItemRows");
