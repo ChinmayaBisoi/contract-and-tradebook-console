@@ -209,7 +209,7 @@ describe("Organisation overview analytics", () => {
     });
   });
 
-  it("hides the overview for non-owner, non-admin members", async () => {
+  it("shows contract count cards for members without value analytics", async () => {
     clientState.organisationQuery.mockResolvedValue({
       id: "org_1",
       role: "MEMBER",
@@ -222,8 +222,14 @@ describe("Organisation overview analytics", () => {
 
     renderAnalytics();
 
-    await waitFor(() => {
-      expect(screen.queryByText("Overview")).not.toBeInTheDocument();
-    });
+    expect(await screen.findByText("Overview")).toBeInTheDocument();
+    expect(screen.getByText("Total contracts")).toBeInTheDocument();
+    expect(screen.getByText("Total line items")).toBeInTheDocument();
+    expect(screen.getByText("Draft contracts")).toBeInTheDocument();
+    expect(screen.getByText("Finalized contracts")).toBeInTheDocument();
+    expect(screen.getByText("Archived contracts")).toBeInTheDocument();
+    expect(screen.queryByText("Grand contract value")).not.toBeInTheDocument();
+    expect(screen.queryByText("Contract value over time")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Import workbook" })).not.toBeInTheDocument();
   });
 });

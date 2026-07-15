@@ -330,6 +330,8 @@ export function OrganisationAnalytics({
   );
   const isDefaultTimeline =
     contractId === "all" && status === "ALL" && rangePreset === "all";
+  const canManageAnalytics =
+    organisation.role === "OWNER" || organisation.role === "ADMIN";
   const {
     data: timelineAnalytics,
     isFetching: timelineIsFetching,
@@ -340,6 +342,7 @@ export function OrganisationAnalytics({
       organisationId,
       filters: timelineFilters,
     }),
+    enabled: canManageAnalytics,
     initialData: isDefaultTimeline ? baseAnalytics : undefined,
     placeholderData: keepPreviousData,
   });
@@ -361,8 +364,64 @@ export function OrganisationAnalytics({
     },
   });
 
-  if (organisation.role !== "OWNER" && organisation.role !== "ADMIN") {
-    return null;
+  const contractCountCards = (
+    <>
+      <MetricCard
+        label="Total contracts"
+        value={formatInteger(baseAnalytics.totalContracts)}
+        description="All contracts in this organisation"
+        icon={FileTextIcon}
+      />
+      <MetricCard
+        label="Total line items"
+        value={formatInteger(baseAnalytics.totalLineItems)}
+        description="Line items across every contract"
+        icon={ReceiptTextIcon}
+      />
+      <MetricCard
+        label="Draft contracts"
+        value={formatInteger(baseAnalytics.draftContracts)}
+        description="Contracts still in draft"
+        icon={FileStackIcon}
+      />
+      <MetricCard
+        label="Finalized contracts"
+        value={formatInteger(baseAnalytics.finalizedContracts)}
+        description="Contracts ready for execution"
+        icon={HandCoinsIcon}
+      />
+      <MetricCard
+        label="Archived contracts"
+        value={formatInteger(baseAnalytics.archivedContracts)}
+        description="Closed or retired contracts"
+        icon={ArchiveIcon}
+      />
+    </>
+  );
+
+  if (!canManageAnalytics) {
+    return (
+      <section
+        aria-labelledby="organisation-analytics-title"
+        className="space-y-4"
+      >
+        <div className="space-y-1">
+          <h2
+            id="organisation-analytics-title"
+            className="text-lg font-semibold tracking-tight"
+          >
+            Overview
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Contract counts for this organisation.
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {contractCountCards}
+        </div>
+      </section>
+    );
   }
 
   const rangeDescription =
