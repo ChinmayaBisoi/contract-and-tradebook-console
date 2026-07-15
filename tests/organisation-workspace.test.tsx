@@ -5,7 +5,6 @@ import { Suspense } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import OrganisationError from "@/app/(protected)/org/[orgId]/error";
-import { OrganisationNav } from "@/components/organisation/organisation-nav";
 import {
   OrganisationWorkspace,
   OrganisationWorkspaceErrorBoundary,
@@ -25,10 +24,10 @@ const organisation = {
 let pathname = "/org/org_1";
 let query = vi.fn().mockResolvedValue(organisation);
 
-const serverMocks = vi.hoisted(() => ({
+const serverMocks = {
   prefetchQuery: vi.fn(),
   queryOptions: vi.fn((input: { id: string }) => ({ input })),
-}));
+};
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathname,
@@ -100,33 +99,17 @@ describe("OrganisationWorkspace", () => {
     expect(screen.getByText("Analytics placeholder")).toBeInTheDocument();
   });
 
-  it("renders organisation links and identifies the active route", () => {
+  it("does not render duplicated section buttons inside the organisation workspace", async () => {
     pathname = "/org/org_1/contracts";
-    render(<OrganisationNav orgId="org_1" />);
+    renderWorkspace();
 
-    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
-      "href",
-      "/org/org_1",
-    );
-    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
-      "href",
-      "/org/org_1/contracts",
-    );
-    expect(screen.getByRole("link", { name: "Audit Trail" })).toHaveAttribute(
-      "href",
-      "/org/org_1/audit-trail",
-    );
-    expect(screen.getByRole("link", { name: "Teams" })).toHaveAttribute(
-      "href",
-      "/org/org_1/teams",
-    );
-    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("link", { name: "Analytics" })).not.toHaveAttribute(
-      "aria-current",
-    );
+    expect(
+      await screen.findByRole("heading", { name: "Contract Operations" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Analytics" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Contracts" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Audit Trail" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Teams" })).toBeNull();
   });
 
   it("activates the Suspense fallback while organisation data is pending", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Building2Icon, InboxIcon, SearchIcon } from "lucide-react";
+import Link from "next/link";
 
 import type {
   InvitationRow,
@@ -12,7 +13,7 @@ import { CreateInvitationDialog } from "@/components/invitations/create-invitati
 import { EditInvitationDialog } from "@/components/invitations/edit-invitation-dialog";
 import { CreateOrganisationDialog } from "@/components/organisations/create-organisation-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Empty,
   EmptyDescription,
@@ -182,16 +183,24 @@ function OrganisationTable({
             <TableCell>{row.activeMemberCount} members</TableCell>
             <TableCell>{formatDate(row.createdAt)}</TableCell>
             <TableCell className="text-right">
-              {(row.role === "OWNER" || row.role === "ADMIN") && (
-                <CreateInvitationDialog
-                  organisationId={row.id}
-                  organisationName={row.name}
-                  requesterRole={row.role}
-                  isPending={props.isMutating}
-                  error={props.mutationError}
-                  onCreate={props.onCreateInvitation}
-                />
-              )}
+              <div className="flex justify-end gap-1">
+                <Link
+                  href={`/org/${row.id}`}
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  Open
+                </Link>
+                {(row.role === "OWNER" || row.role === "ADMIN") && (
+                  <CreateInvitationDialog
+                    organisationId={row.id}
+                    organisationName={row.name}
+                    requesterRole={row.role}
+                    isPending={props.isMutating}
+                    error={props.mutationError}
+                    onCreate={props.onCreateInvitation}
+                  />
+                )}
+              </div>
             </TableCell>
           </TableRow>
         ))}

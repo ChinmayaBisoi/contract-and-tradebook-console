@@ -6,8 +6,12 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { clerkMocks } from "@/tests/mocks/clerk";
 
+const navigationMocks = {
+  pathname: "/dashboard",
+};
+
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard",
+  usePathname: () => navigationMocks.pathname,
 }));
 
 vi.mock("@/components/nav-user", () => ({
@@ -17,6 +21,7 @@ vi.mock("@/components/nav-user", () => ({
 describe("AppSidebar", () => {
   beforeEach(() => {
     clerkMocks.openUserProfile.mockClear();
+    navigationMocks.pathname = "/dashboard";
   });
 
   it("opens Clerk account management when Settings is clicked", async () => {
@@ -45,6 +50,66 @@ describe("AppSidebar", () => {
       "data-active:text-primary-foreground",
       "data-active:hover:bg-primary",
       "data-active:hover:text-primary-foreground",
+    );
+  });
+
+  it("shows org section links in sidebar when viewing an organisation route", () => {
+    navigationMocks.pathname = "/org/org_1/contracts";
+
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
+      "href",
+      "/org/org_1",
+    );
+    expect(screen.getByRole("link", { name: "Audit Trail" })).toHaveAttribute(
+      "href",
+      "/org/org_1/audit-trail",
+    );
+    expect(screen.getByRole("link", { name: "Team" })).toHaveAttribute(
+      "href",
+      "/org/org_1/teams",
+    );
+    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
+      "href",
+      "/org/org_1/contracts",
+    );
+  });
+
+  it("does not show org links in sidebar on non-org routes", () => {
+    navigationMocks.pathname = "/dashboard";
+
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>,
+    );
+
+    expect(screen.queryByRole("link", { name: "Analytics" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Audit Trail" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Team" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Contracts" })).toBeNull();
+  });
+
+  it("marks nested org section link active without activating analytics", () => {
+    navigationMocks.pathname = "/org/org_1/contracts/detail";
+
+    render(
+      <SidebarProvider>
+        <AppSidebar />
+      </SidebarProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
+      "data-active",
+    );
+    expect(screen.getByRole("link", { name: "Analytics" })).not.toHaveAttribute(
+      "data-active",
+      "true",
     );
   });
 });
