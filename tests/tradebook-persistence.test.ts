@@ -12,7 +12,7 @@ import { persistReviewedDraft } from "@/lib/tradebook/persistence";
 import { buildImportDraft } from "@/lib/tradebook/validation";
 
 const sample = readFileSync(
-  path.resolve(__dirname, "../../sample_tradebook_xl.xlsx"),
+  path.resolve(__dirname, "../samples-for-testing/sample_tradebook_xl.xlsx"),
 );
 
 let parsed: ParsedWorkbook;

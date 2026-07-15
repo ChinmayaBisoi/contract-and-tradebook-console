@@ -33,7 +33,12 @@ type ExportOrganisation = {
 
 function resolveTemplatePath() {
   const candidates = [
+    path.resolve(process.cwd(), "samples-for-testing/sample_tradebook_xl.xlsx"),
     path.resolve(process.cwd(), "sample_tradebook_xl.xlsx"),
+    path.resolve(
+      process.cwd(),
+      "../samples-for-testing/sample_tradebook_xl.xlsx",
+    ),
     path.resolve(process.cwd(), "../sample_tradebook_xl.xlsx"),
   ];
 

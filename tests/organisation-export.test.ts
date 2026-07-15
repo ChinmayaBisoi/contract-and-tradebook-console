@@ -14,11 +14,11 @@ import { parseWorkbookBuffer } from "@/lib/tradebook/parser";
 import { buildImportDraft } from "@/lib/tradebook/validation";
 
 const sampleTemplate = readFileSync(
-  path.resolve(__dirname, "../../sample_tradebook_xl.xlsx"),
+  path.resolve(__dirname, "../samples-for-testing/sample_tradebook_xl.xlsx"),
 );
 const deployedTemplatePath = path.resolve(
   __dirname,
-  "../sample_tradebook_xl.xlsx",
+  "../samples-for-testing/sample_tradebook_xl.xlsx",
 );
 
 function getWorksheet(workbook: ExcelJS.Workbook, name: string) {

@@ -12,7 +12,7 @@ describe("sample tradebook acceptance flow", () => {
     "prepares the workbook and isolates the exact ORG-001 import partition",
     async () => {
       const workbook = readFileSync(
-        path.resolve(__dirname, "../../sample_tradebook_xl.xlsx"),
+        path.resolve(__dirname, "../samples-for-testing/sample_tradebook_xl.xlsx"),
       );
       const parsed = await parseWorkbookBuffer(workbook);
       const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);

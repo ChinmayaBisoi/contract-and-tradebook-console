@@ -29,7 +29,7 @@ describe("organisation export route", () => {
 
   it("copies the workbook template into the production image", () => {
     expect(dockerfile).toContain(
-      "COPY --from=builder /app/sample_tradebook_xl.xlsx ./sample_tradebook_xl.xlsx",
+      "COPY --from=builder /app/samples-for-testing ./samples-for-testing",
     );
   });
 });
