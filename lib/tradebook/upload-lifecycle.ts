@@ -5,7 +5,7 @@ import {
   createOrganisationMembershipFinder,
   type OrganisationMembership,
 } from "@/lib/organisation-access";
-import { publishTradebookEvent } from "@/lib/tradebook/events";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 
 export type TradebookUploadMetadata = {
   organisationId: string;
@@ -116,10 +116,11 @@ export async function completeTradebookUpload(
       select: { id: true },
     });
 
-    publishTradebookEvent({
-      type: "upload.updated",
+    publishRealtimeEvent({
+      entity: "upload",
+      action: "updated",
       organisationId: input.organisationId,
-      importId: input.uploadId,
+      entityId: input.uploadId,
       uploadId: input.uploadId,
       status: "UPLOADED",
     });
