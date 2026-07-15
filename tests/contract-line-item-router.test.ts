@@ -19,6 +19,7 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
     lineItem: {
@@ -27,6 +28,7 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
     auditEvent: {
       create: vi.fn().mockResolvedValue({ id: "event_1" }),
@@ -287,6 +289,108 @@ describe("contract and line item routers", () => {
           action: "UPDATE",
           entityType: "LINE_ITEM",
           actorClerkUserId: "owner_1",
+        }),
+      }),
+    );
+  });
+
+  it("deletes draft contracts and their dependent line items", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      events: [],
+    });
+
+    const caller = createCaller(db);
+
+    await expect(
+      caller.contract.delete({
+        organisationId: "org_1",
+        id: "contract_1",
+      }),
+    ).resolves.toEqual({ id: "contract_1" });
+
+    expect(tx.contract.delete).toHaveBeenCalledWith({
+      where: { id: "contract_1" },
+    });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "DELETE",
+          entityType: "CONTRACT",
+        }),
+      }),
+    );
+  });
+
+  it("deletes line items only while the parent contract is draft", async () => {
+    const { db, tx } = createDb({});
+    tx.lineItem.findFirst.mockResolvedValue({
+      id: "line_1",
+      contractId: "contract_1",
+      workbookItemId: null,
+      description: "Steel bolts",
+      quantity: { toString: () => "20" },
+      quantityUnit: "pcs",
+      unitPrice: { toString: () => "10" },
+      pricingUnit: "pcs",
+      total: { toString: () => "200" },
+      sortOrder: 0,
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      upload: null,
+      contract: {
+        id: "contract_1",
+        poRefNo: "PO-1",
+        clientName: "Acme",
+        sourceType: "JSON",
+        organisationId: "org_1",
+        status: "DRAFT",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        paymentTerms: null,
+        deliveryTerms: null,
+      },
+    });
+    tx.lineItem.delete.mockResolvedValue({ id: "line_1" });
+    tx.contract.findFirst.mockResolvedValue({
+      id: "contract_1",
+      organisationId: "org_1",
+      status: "DRAFT",
+      clientName: "Acme",
+      poRefNo: "PO-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      paymentTerms: null,
+      deliveryTerms: null,
+      lineItems: [],
+    });
+
+    const caller = createCaller(db);
+
+    await expect(
+      caller.lineItem.delete({
+        organisationId: "org_1",
+        id: "line_1",
+      }),
+    ).resolves.toEqual({ id: "line_1", contractId: "contract_1" });
+
+    expect(tx.lineItem.delete).toHaveBeenCalledWith({
+      where: { id: "line_1" },
+    });
+    expect(tx.auditEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: "DELETE",
+          entityType: "LINE_ITEM",
         }),
       }),
     );
