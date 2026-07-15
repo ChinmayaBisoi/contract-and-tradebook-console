@@ -423,18 +423,6 @@ export function OrganisationContracts({
                             Open
                             <ArrowRightIcon aria-hidden="true" />
                           </Button>
-                          <Button
-                            render={
-                              <Link
-                                href={`/org/${organisationId}/contracts/${row.id}/line-items`}
-                              />
-                            }
-                            variant="ghost"
-                            size="sm"
-                          >
-                            Items
-                            <ExternalLinkIcon aria-hidden="true" />
-                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
