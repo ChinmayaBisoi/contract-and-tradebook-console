@@ -17,6 +17,7 @@ import { Component, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { CreateInvitationDialog } from "@/components/invitations/create-invitation-dialog";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   type OrganisationTeamMember,
   OrganisationTeamTable,
@@ -298,6 +299,17 @@ export function OrganisationTeam({
     updateMemberRole.isPending ||
     updateMemberStatus.isPending ||
     removeMember.isPending;
+
+  useOrganisationEvents({
+    organisationId,
+    onEvent: async (event) => {
+      if (event.entity !== "organisation" && event.entity !== "invitation") {
+        return;
+      }
+
+      await invalidateTeam(true);
+    },
+  });
 
   async function invalidateTeam(includeInvitations = false) {
     const invalidations = [

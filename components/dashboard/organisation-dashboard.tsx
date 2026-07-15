@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useUserEvents } from "@/components/realtime/use-user-events";
 import { OrganisationDashboardView } from "@/components/dashboard/organisation-dashboard-view";
 import {
   dataTableSearchParams,
@@ -104,6 +105,16 @@ export function OrganisationDashboard() {
   const cancelInvitation = useMutation(
     trpc.invitation.cancel.mutationOptions(),
   );
+
+  useUserEvents({
+    onEvent: async (event) => {
+      if (event.entity !== "organisation" && event.entity !== "invitation") {
+        return;
+      }
+
+      await invalidateDashboard();
+    },
+  });
 
   async function invalidateDashboard() {
     await Promise.all([

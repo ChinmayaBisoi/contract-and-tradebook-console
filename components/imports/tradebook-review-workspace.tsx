@@ -20,7 +20,7 @@ import Link from "next/link";
 import { Suspense, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { useTradebookImportEvents } from "@/components/imports/use-tradebook-import-events";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -394,9 +394,10 @@ export function TradebookReviewWorkspace({
   const imported = data.status === "IMPORTED" || commit.isSuccess;
   const failed = data.status === "FAILED";
 
-  useTradebookImportEvents({
+  useOrganisationEvents({
     organisationId,
-    importId,
+    entity: "upload",
+    entityId: importId,
     onEvent: async () => {
       await Promise.all([
         queryClient.invalidateQueries(

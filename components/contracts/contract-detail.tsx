@@ -1,12 +1,15 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 
 import { CreateLineItemDialog } from "@/components/contracts/create-line-item-dialog";
 import { EditContractDialog } from "@/components/contracts/edit-contract-dialog";
 import { EditLineItemDialog } from "@/components/contracts/edit-line-item-dialog";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { TableEmptyState } from "@/components/contracts/contracts-table-states";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Table,
@@ -17,6 +20,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTRPC } from "@/trpc/client";
+import { Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 const statusLabels = {
   DRAFT: "Draft",
@@ -39,13 +44,91 @@ export function ContractDetail({
   contractId: string;
 }) {
   const trpc = useTRPC();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { data } = useSuspenseQuery(
     trpc.contract.get.queryOptions({
       organisationId,
       id: contractId,
     }),
   );
+  const deleteContract = useMutation(trpc.contract.delete.mutationOptions());
+  const deleteLineItem = useMutation(trpc.lineItem.delete.mutationOptions());
   const isDraft = data.status === "DRAFT";
+
+  useOrganisationEvents({
+    organisationId,
+    onEvent: async (event) => {
+      if (event.entity !== "contract" && event.entity !== "lineItem") {
+        return;
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries(
+          trpc.contract.get.queryFilter({
+            organisationId,
+            id: contractId,
+          }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.contract.list.queryFilter({ organisationId }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.lineItem.list.queryFilter({ organisationId, contractId }),
+        ),
+      ]);
+    },
+  });
+
+  async function handleDeleteContract() {
+    if (!window.confirm("Delete this draft contract and its line items?")) {
+      return;
+    }
+
+    try {
+      await deleteContract.mutateAsync({ organisationId, id: contractId });
+      await Promise.all([
+        queryClient.invalidateQueries(
+          trpc.contract.list.queryFilter({ organisationId }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.lineItem.list.queryFilter({ organisationId, contractId }),
+        ),
+      ]);
+      toast.success("Contract deleted");
+      router.push(`/org/${organisationId}/contracts`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Contract could not be deleted",
+      );
+    }
+  }
+
+  async function handleDeleteLineItem(id: string) {
+    if (!window.confirm("Delete this draft line item?")) {
+      return;
+    }
+
+    try {
+      await deleteLineItem.mutateAsync({ organisationId, id });
+      await Promise.all([
+        queryClient.invalidateQueries(
+          trpc.contract.get.queryFilter({ organisationId, id: contractId }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.contract.list.queryFilter({ organisationId }),
+        ),
+        queryClient.invalidateQueries(
+          trpc.lineItem.list.queryFilter({ organisationId, contractId }),
+        ),
+      ]);
+      toast.success("Line item deleted");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Line item could not be deleted",
+      );
+    }
+  }
 
   return (
     <section className="space-y-4">
@@ -67,6 +150,15 @@ export function ContractDetail({
             organisationId={organisationId}
             contract={{ ...data, poDate: new Date(data.poDate) }}
           />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!isDraft || deleteContract.isPending}
+            onClick={() => void handleDeleteContract()}
+          >
+            <Trash2Icon />
+            {deleteContract.isPending ? "Deleting..." : "Delete contract"}
+          </Button>
           <CreateLineItemDialog
             organisationId={organisationId}
             contractId={data.id}
@@ -123,12 +215,23 @@ export function ContractDetail({
                         {date.format(new Date(item.updatedAt))}
                       </TableCell>
                       <TableCell>
-                        <EditLineItemDialog
-                          organisationId={organisationId}
-                          contractId={data.id}
-                          lineItem={item}
-                          disabled={!isDraft}
-                        />
+                        <div className="flex items-center gap-2">
+                          <EditLineItemDialog
+                            organisationId={organisationId}
+                            contractId={data.id}
+                            lineItem={item}
+                            disabled={!isDraft}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={!isDraft || deleteLineItem.isPending}
+                            onClick={() => void handleDeleteLineItem(item.id)}
+                          >
+                            <Trash2Icon />
+                            Delete
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

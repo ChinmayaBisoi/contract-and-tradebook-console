@@ -1,6 +1,6 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { EyeIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
@@ -10,6 +10,7 @@ import {
   auditSearchParams,
   getAuditListInput,
 } from "@/components/operations/search-params";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   OperationsPagination,
   SortButton,
@@ -97,15 +98,21 @@ export function OrganisationAuditTrail({
   organisationId: string;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(auditSearchParams, {
     history: "push",
     shallow: true,
     startTransition,
   });
-  const { data } = useSuspenseQuery(
-    trpc.audit.list.queryOptions(getAuditListInput(organisationId, state)),
-  );
+  const input = getAuditListInput(organisationId, state);
+  const { data } = useSuspenseQuery(trpc.audit.list.queryOptions(input));
+  useOrganisationEvents({
+    organisationId,
+    onEvent: async () => {
+      await queryClient.invalidateQueries(trpc.audit.list.queryFilter(input));
+    },
+  });
   const filtered = Boolean(
     state.q ||
       state.action ||

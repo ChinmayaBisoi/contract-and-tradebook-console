@@ -1,12 +1,13 @@
 "use client";
 
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
 import { useTransition } from "react";
 
 import { CreateContractDialog } from "@/components/contracts/create-contract-dialog";
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import {
   contractSearchParams,
   getContractListInput,
@@ -53,6 +54,7 @@ export function OrganisationContracts({
   organisationId: string;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const [pending, startTransition] = useTransition();
   const [state, setState] = useQueryStates(contractSearchParams, {
     history: "push",
@@ -61,6 +63,21 @@ export function OrganisationContracts({
   });
   const input = getContractListInput(organisationId, state);
   const { data } = useSuspenseQuery(trpc.contract.list.queryOptions(input));
+  useOrganisationEvents({
+    organisationId,
+    onEvent: async (event) => {
+      if (event.entity !== "contract" && event.entity !== "lineItem") {
+        return;
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries(trpc.contract.list.queryFilter(input)),
+        queryClient.invalidateQueries(
+          trpc.lineItem.list.queryFilter({ organisationId }),
+        ),
+      ]);
+    },
+  });
   const filtered = Boolean(
     state.q || state.status || state.source || state.poFrom || state.poTo,
   );

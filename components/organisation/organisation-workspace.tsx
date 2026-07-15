@@ -2,11 +2,13 @@
 
 import {
   QueryErrorResetBoundary,
+  useQueryClient,
   useSuspenseQuery,
 } from "@tanstack/react-query";
 import Link from "next/link";
 import { Component } from "react";
 
+import { useOrganisationEvents } from "@/components/realtime/use-organisation-events";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useTRPC } from "@/trpc/client";
@@ -124,9 +126,21 @@ export function OrganisationWorkspace({
   children: React.ReactNode;
 }) {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
+  const input = { id: orgId };
   const { data: organisation } = useSuspenseQuery(
-    trpc.organisation.get.queryOptions({ id: orgId }),
+    trpc.organisation.get.queryOptions(input),
   );
+  useOrganisationEvents({
+    organisationId: orgId,
+    onEvent: async (event) => {
+      if (event.entity !== "organisation") {
+        return;
+      }
+
+      await queryClient.invalidateQueries(trpc.organisation.get.queryFilter(input));
+    },
+  });
 
   return (
     <div className="flex flex-1 flex-col">
