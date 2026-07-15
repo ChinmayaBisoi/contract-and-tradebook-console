@@ -84,15 +84,17 @@ type OrganisationRouterDb = {
     }>;
     findMany: (args: unknown) => Promise<
       Array<{
-        id: string;
-        poRefNo: string;
-        clientName: string;
+        id?: string;
+        poRefNo?: string;
+        clientName?: string;
+        poDate?: Date | null;
+        total?: unknown;
+        _count?: { lineItems: number };
       }>
     >;
     groupBy: (args: unknown) => Promise<
       Array<{
         status?: "DRAFT" | "FINALIZED" | "ARCHIVED";
-        poDate?: Date;
         _count: { _all: number };
       }>
     >;
@@ -568,8 +570,7 @@ export const organisationRouter = createTRPCRouter({
             clientName: true,
           },
         }),
-        db.contract.groupBy({
-          by: ["poDate"],
+        db.contract.findMany({
           where: {
             organisationId: input.organisationId,
             ...(input.filters.contractId ? { id: input.filters.contractId } : {}),
@@ -587,8 +588,16 @@ export const organisationRouter = createTRPCRouter({
                 }
               : {}),
           },
-          _count: { _all: true },
           orderBy: { poDate: "asc" },
+          select: {
+            poDate: true,
+            total: true,
+            _count: {
+              select: {
+                lineItems: true,
+              },
+            },
+          },
         }),
       ]);
 
@@ -609,6 +618,35 @@ export const organisationRouter = createTRPCRouter({
         if (entry.status) {
           contractCounts[entry.status] = entry._count._all;
         }
+      }
+
+      const timelineByDate = new Map<
+        string,
+        {
+          date: string;
+          contractCount: number;
+          lineItemCount: number;
+          contractValue: number;
+        }
+      >();
+
+      for (const contract of contractTimeline) {
+        if (!(contract.poDate instanceof Date)) {
+          continue;
+        }
+
+        const date = contract.poDate.toISOString().slice(0, 10);
+        const existing = timelineByDate.get(date) ?? {
+          date,
+          contractCount: 0,
+          lineItemCount: 0,
+          contractValue: 0,
+        };
+
+        existing.contractCount += 1;
+        existing.lineItemCount += contract._count?.lineItems ?? 0;
+        existing.contractValue += decimalToNumber(contract.total);
+        timelineByDate.set(date, existing);
       }
 
       return {
@@ -636,18 +674,10 @@ export const organisationRouter = createTRPCRouter({
           max: contractTotals._max?.poDate ?? null,
         },
         contractOptions: contractOptions.map((contract) => ({
-          id: contract.id,
-          label: `${contract.poRefNo} - ${contract.clientName}`,
+          id: contract.id ?? "",
+          label: `${contract.poRefNo ?? ""} - ${contract.clientName ?? ""}`,
         })),
-        contractsOverTime: contractTimeline
-          .filter(
-            (entry): entry is typeof entry & { poDate: Date } =>
-              entry.poDate instanceof Date,
-          )
-          .map((entry) => ({
-            date: entry.poDate.toISOString().slice(0, 10),
-            contractCount: entry._count._all,
-          })),
+        contractsOverTime: [...timelineByDate.values()],
       };
     }),
 

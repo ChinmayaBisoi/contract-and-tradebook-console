@@ -1,6 +1,11 @@
 "use client";
 
-import { useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from "@tanstack/react-query";
 import {
   ArchiveIcon,
   CalculatorIcon,
@@ -28,7 +33,6 @@ import {
   type ChartConfig,
   ChartContainer,
   ChartTooltip,
-  ChartTooltipContent,
 } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,8 +65,8 @@ const shortDateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 
 const timelineChartConfig = {
-  contracts: {
-    label: "Contracts",
+  contractValue: {
+    label: "Contract value",
     color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
@@ -82,6 +86,20 @@ function formatInteger(value: number) {
 
 function formatCurrency(value: number) {
   return currencyFormatter.format(value);
+}
+
+function formatCompactCurrency(value: number) {
+  if (Math.abs(value) >= 1_000_000_000) {
+    return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  }
+  if (Math.abs(value) >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (Math.abs(value) >= 1_000) {
+    return `$${(value / 1_000).toFixed(1)}K`;
+  }
+
+  return formatCurrency(value);
 }
 
 function toDateValue(date: AnalyticsDateValue): Date | null {
@@ -184,6 +202,57 @@ function ChartCard({
   );
 }
 
+function TimelineTooltipContent({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{
+    payload?: {
+      date: string;
+      contractCount: number;
+      lineItemCount: number;
+      contractValue: number;
+    };
+  }>;
+  label?: string;
+}) {
+  if (!active || !payload?.[0]?.payload) {
+    return null;
+  }
+
+  const point = payload[0].payload;
+
+  return (
+    <div className="grid min-w-44 gap-2 rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl">
+      <div className="font-medium">
+        {longDateFormatter.format(new Date(`${label ?? point.date}T00:00:00.000Z`))}
+      </div>
+      <div className="space-y-1 text-muted-foreground">
+        <div className="flex items-center justify-between gap-3">
+          <span>Total value</span>
+          <span className="font-mono font-medium text-foreground">
+            {formatCurrency(point.contractValue)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>Contracts</span>
+          <span className="font-mono font-medium text-foreground">
+            {formatInteger(point.contractCount)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span>Line items</span>
+          <span className="font-mono font-medium text-foreground">
+            {formatInteger(point.lineItemCount)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OrganisationAnalytics({
   organisationId,
 }: {
@@ -259,12 +328,21 @@ export function OrganisationAnalytics({
     }),
     [activeRange.from, activeRange.to, contractId, status],
   );
-  const { data: timelineAnalytics } = useSuspenseQuery(
-    trpc.organisation.getAnalytics.queryOptions({
+  const isDefaultTimeline =
+    contractId === "all" && status === "ALL" && rangePreset === "all";
+  const {
+    data: timelineAnalytics,
+    isFetching: timelineIsFetching,
+    isError: timelineIsError,
+    refetch: refetchTimeline,
+  } = useQuery({
+    ...trpc.organisation.getAnalytics.queryOptions({
       organisationId,
       filters: timelineFilters,
     }),
-  );
+    initialData: isDefaultTimeline ? baseAnalytics : undefined,
+    placeholderData: keepPreviousData,
+  });
 
   useOrganisationEvents({
     organisationId,
@@ -289,8 +367,9 @@ export function OrganisationAnalytics({
 
   const rangeDescription =
     activeRange.from && activeRange.to
-      ? `Count of contracts by PO date from ${longDateFormatter.format(activeRange.from)} to ${longDateFormatter.format(activeRange.to)}.`
-      : "Count of contracts by PO date.";
+      ? `Contract value by PO date from ${longDateFormatter.format(activeRange.from)} to ${longDateFormatter.format(activeRange.to)}.`
+      : "Contract value by PO date.";
+  const timelinePoints = timelineAnalytics?.contractsOverTime ?? [];
 
   return (
     <section
@@ -492,7 +571,7 @@ export function OrganisationAnalytics({
         </div>
 
         <ChartCard
-          title="Contracts over time"
+          title="Contract value over time"
           description={rangeDescription}
           controls={
             <ToggleGroup
@@ -518,81 +597,93 @@ export function OrganisationAnalytics({
             </ToggleGroup>
           }
         >
-          {timelineAnalytics.contractsOverTime.length > 0 ? (
-            <ChartContainer
-              config={timelineChartConfig}
-              className="aspect-auto h-[320px] w-full"
-            >
-              <AreaChart
-                data={timelineAnalytics.contractsOverTime}
-                accessibilityLayer
-              >
-                <defs>
-                  <linearGradient
-                    id="fillContracts"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="5%"
-                      stopColor="var(--color-contracts)"
-                      stopOpacity={0.65}
-                    />
-                    <stop
-                      offset="95%"
-                      stopColor="var(--color-contracts)"
-                      stopOpacity={0.08}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  minTickGap={32}
-                  tickFormatter={(value) =>
-                    shortDateFormatter.format(
-                      new Date(`${value}T00:00:00.000Z`),
-                    )
-                  }
-                />
-                <YAxis allowDecimals={false} width={32} />
-                <ChartTooltip
-                  cursor={false}
-                  content={
-                    <ChartTooltipContent
-                      indicator="dot"
-                      labelFormatter={(value) =>
-                        longDateFormatter.format(
-                          new Date(`${String(value)}T00:00:00.000Z`),
-                        )
-                      }
-                      formatter={(value) => (
-                        <span className="font-mono font-medium text-foreground">
-                          {formatInteger(Number(value))}
-                        </span>
-                      )}
-                    />
-                  }
-                />
-                <Area
-                  type="monotone"
-                  dataKey="contractCount"
-                  stroke="var(--color-contracts)"
-                  fill="url(#fillContracts)"
-                  strokeWidth={2}
-                />
-              </AreaChart>
-            </ChartContainer>
-          ) : (
-            <div className="grid min-h-56 place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
-              No contracts match the current filters.
+          <div className="space-y-3" aria-busy={timelineIsFetching || undefined}>
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>Hover a point to inspect value, contracts, and line items.</span>
+              {timelineIsFetching ? (
+                <span className="font-medium text-foreground">Updating chart…</span>
+              ) : null}
             </div>
-          )}
+
+            {timelinePoints.length > 0 ? (
+              <ChartContainer
+                config={timelineChartConfig}
+                className={timelineIsFetching ? "aspect-auto h-[320px] w-full opacity-60 transition-opacity" : "aspect-auto h-[320px] w-full"}
+              >
+                <AreaChart
+                  data={timelinePoints}
+                  accessibilityLayer
+                >
+                  <defs>
+                    <linearGradient
+                      id="fillContractValue"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="var(--color-contractValue)"
+                        stopOpacity={0.65}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="var(--color-contractValue)"
+                        stopOpacity={0.08}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    minTickGap={32}
+                    tickFormatter={(value) =>
+                      shortDateFormatter.format(
+                        new Date(`${value}T00:00:00.000Z`),
+                      )
+                    }
+                  />
+                  <YAxis
+                    width={72}
+                    tickFormatter={(value) => formatCompactCurrency(Number(value))}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<TimelineTooltipContent />}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="contractValue"
+                    stroke="var(--color-contractValue)"
+                    fill="url(#fillContractValue)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ChartContainer>
+            ) : (
+              <div className="grid min-h-56 place-items-center rounded-xl border border-dashed text-sm text-muted-foreground">
+                No contracts match the current filters.
+              </div>
+            )}
+
+            {timelineIsError && timelinePoints.length > 0 ? (
+              <div className="flex items-center justify-between rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                <span>Could not refresh the chart. Showing the last successful data.</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void refetchTimeline()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : null}
+          </div>
 
           <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
             <span>

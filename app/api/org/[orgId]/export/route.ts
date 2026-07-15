@@ -1,15 +1,15 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextRequest } from "next/server";
-
-import {
-  checkOrgPermission,
-  createOrganisationMembershipFinder,
-} from "@/lib/organisation-access";
+import type { NextRequest } from "next/server";
+import { trpcErrorResponse } from "@/lib/http/trpc-error-response";
 import {
   buildOrganisationContractsJson,
   buildOrganisationExportFileName,
   buildOrganisationWorkbook,
 } from "@/lib/organisation/export";
+import {
+  checkOrgPermission,
+  createOrganisationMembershipFinder,
+} from "@/lib/organisation-access";
 import { prisma } from "@/lib/prisma";
 
 const XLSX_MIME =
@@ -34,12 +34,18 @@ export async function GET(
     return new Response("Export format must be excel or json", { status: 400 });
   }
 
-  await checkOrgPermission({
-    clerkUserId: session.userId,
-    organisationId: params.orgId,
-    action: "contract:read",
-    findMembership: createOrganisationMembershipFinder(prisma),
-  });
+  try {
+    await checkOrgPermission({
+      clerkUserId: session.userId,
+      organisationId: params.orgId,
+      action: "contract:read",
+      findMembership: createOrganisationMembershipFinder(prisma),
+    });
+  } catch (error) {
+    const response = trpcErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 
   const [organisation, contracts] = await Promise.all([
     prisma.organisation.findUnique({
@@ -79,7 +85,11 @@ export async function GET(
     });
   }
 
-  const body = JSON.stringify(buildOrganisationContractsJson(contracts), null, 2);
+  const body = JSON.stringify(
+    buildOrganisationContractsJson(contracts),
+    null,
+    2,
+  );
 
   return new Response(body, {
     status: 200,

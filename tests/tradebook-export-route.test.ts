@@ -11,12 +11,12 @@ const source = readFileSync(
 );
 
 describe("tradebook workbook export route", () => {
-  it("streams xlsx workbook downloads from a dedicated route", () => {
+  it("redirects legacy workbook downloads to the DB-backed organisation export", () => {
     expect(source).toContain("export async function GET");
-    expect(source).toContain(
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    expect(source).toContain("Content-Disposition");
-    expect(source).toContain("buildReviewedWorkbook");
+    expect(source).toContain("Response.redirect");
+    expect(source).toContain(`/api/org/\${params.orgId}/export?format=excel`);
+    expect(source).not.toContain("buildReviewedWorkbook");
+    expect(source).not.toContain("getWorkbookReadUrl");
+    expect(source).not.toContain("record.upload.storageKey");
   });
 });

@@ -23,7 +23,7 @@ type ExportContract = {
   poDate: Date;
   paymentTerms: string | null;
   deliveryTerms: string | null;
-  lineItems: ExportLineItem[];
+  lineItems: readonly ExportLineItem[];
 };
 
 type ExportOrganisation = {
@@ -33,8 +33,8 @@ type ExportOrganisation = {
 
 function resolveTemplatePath() {
   const candidates = [
-    path.resolve(process.cwd(), "../sample_tradebook_xl.xlsx"),
     path.resolve(process.cwd(), "sample_tradebook_xl.xlsx"),
+    path.resolve(process.cwd(), "../sample_tradebook_xl.xlsx"),
   ];
 
   const match = candidates.find((candidate) => existsSync(candidate));
@@ -45,7 +45,9 @@ function resolveTemplatePath() {
   return match;
 }
 
-async function loadTemplateBuffer(templateBuffer?: Buffer) {
+async function loadTemplateBuffer(
+  templateBuffer?: Uint8Array<ArrayBufferLike>,
+) {
   if (templateBuffer) {
     return templateBuffer;
   }
@@ -72,6 +74,14 @@ function sortContracts<T extends ExportContract>(contracts: readonly T[]) {
 
 function sortLineItems<T extends ExportLineItem>(lineItems: readonly T[]) {
   return [...lineItems].sort((left, right) => left.sortOrder - right.sortOrder);
+}
+
+function formulaOrZero(
+  hasData: boolean,
+  formula: string,
+  result: number,
+): ExcelJS.CellFormulaValue {
+  return hasData ? { formula, result } : { formula: "0", result: 0 };
 }
 
 type JsonLineItem = {
@@ -139,20 +149,31 @@ function ensureRowCountForFooterSheet(
   dataStartRow: number,
   desiredDataCount: number,
 ) {
-  let footerRowNumber = worksheet.rowCount;
-  let currentDataCount = footerRowNumber - dataStartRow;
-
-  while (currentDataCount < desiredDataCount) {
-    worksheet.insertRow(footerRowNumber, [], "i");
-    currentDataCount += 1;
-    footerRowNumber += 1;
+  // ExcelJS does not reliably splice a large loaded range in one operation.
+  // Delete bottom-up while retaining one styled data row and the styled footer.
+  for (let row = worksheet.rowCount - 1; row > dataStartRow; row -= 1) {
+    worksheet.spliceRows(row, 1);
   }
 
-  if (currentDataCount > desiredDataCount) {
-    worksheet.spliceRows(
-      dataStartRow + desiredDataCount,
-      currentDataCount - desiredDataCount,
-    );
+  if (desiredDataCount === 0) {
+    worksheet.spliceRows(dataStartRow, 1);
+    return;
+  }
+
+  let footerRowNumber = dataStartRow + 1;
+  for (
+    let currentDataCount = 1;
+    currentDataCount < desiredDataCount;
+    currentDataCount += 1
+  ) {
+    worksheet.insertRow(footerRowNumber, [], "i");
+    footerRowNumber += 1;
+  }
+}
+
+function deleteRowsFrom(worksheet: ExcelJS.Worksheet, firstRow: number) {
+  for (let row = worksheet.rowCount; row >= firstRow; row -= 1) {
+    worksheet.spliceRows(row, 1);
   }
 }
 
@@ -163,7 +184,7 @@ export async function buildOrganisationWorkbook({
 }: {
   organisation: ExportOrganisation;
   contracts: readonly ExportContract[];
-  templateBuffer?: Buffer;
+  templateBuffer?: Uint8Array<ArrayBufferLike>;
 }) {
   const workbook = new ExcelJS.Workbook();
   const source = await loadTemplateBuffer(templateBuffer);
@@ -176,7 +197,12 @@ export async function buildOrganisationWorkbook({
   const summarySheet = workbook.getWorksheet("Summary");
   const dashboardSheet = workbook.getWorksheet("Dashboard");
 
-  if (!organizationsSheet || !lineItemsSheet || !summarySheet || !dashboardSheet) {
+  if (
+    !organizationsSheet ||
+    !lineItemsSheet ||
+    !summarySheet ||
+    !dashboardSheet
+  ) {
     throw new Error("Tradebook export template is missing one or more sheets.");
   }
 
@@ -191,8 +217,12 @@ export async function buildOrganisationWorkbook({
     })),
   );
 
-  organizationsSheet.spliceRows(3, Math.max(0, organizationsSheet.rowCount - 2));
-  setRowValues(organizationsSheet, 2, [organisation.id, organisation.name, null]);
+  deleteRowsFrom(organizationsSheet, 3);
+  setRowValues(organizationsSheet, 2, [
+    organisation.id,
+    organisation.name,
+    null,
+  ]);
 
   ensureRowCountForFooterSheet(lineItemsSheet, 2, flattenedLineItems.length);
   flattenedLineItems.forEach(({ contract, item, total }, index) => {
@@ -222,10 +252,11 @@ export async function buildOrganisationWorkbook({
     null,
     null,
     null,
-    {
-      formula: `SUM(H${lineItemDataStart}:H${lineItemDataEnd})`,
-      result: flattenedLineItems.reduce((sum, entry) => sum + entry.total, 0),
-    },
+    formulaOrZero(
+      flattenedLineItems.length > 0,
+      `SUM(H${lineItemDataStart}:H${lineItemDataEnd})`,
+      flattenedLineItems.reduce((sum, entry) => sum + entry.total, 0),
+    ),
   ]);
   clearTrailingCells(lineItemsSheet, lineItemFooterRow, 9);
 
@@ -247,14 +278,16 @@ export async function buildOrganisationWorkbook({
       contract.paymentTerms,
       contract.deliveryTerms,
       contract.status,
-      {
-        formula: `COUNTIF('Line Items'!$B$${lineItemDataStart}:$B$${lineItemDataEnd},C${rowNumber})`,
-        result: contractLineItems.length,
-      },
-      {
-        formula: `SUMIF('Line Items'!$B$${lineItemDataStart}:$B$${lineItemDataEnd},C${rowNumber},'Line Items'!$H$${lineItemDataStart}:$H$${lineItemDataEnd})`,
-        result: contractTotal,
-      },
+      formulaOrZero(
+        flattenedLineItems.length > 0,
+        `COUNTIF('Line Items'!$B$${lineItemDataStart}:$B$${lineItemDataEnd},C${rowNumber})`,
+        contractLineItems.length,
+      ),
+      formulaOrZero(
+        flattenedLineItems.length > 0,
+        `SUMIF('Line Items'!$B$${lineItemDataStart}:$B$${lineItemDataEnd},C${rowNumber},'Line Items'!$H$${lineItemDataStart}:$H$${lineItemDataEnd})`,
+        contractTotal,
+      ),
     ]);
   });
   const summaryDataStart = 2;
@@ -268,72 +301,88 @@ export async function buildOrganisationWorkbook({
     null,
     null,
     null,
-    {
-      formula: `SUM(H${summaryDataStart}:H${summaryDataEnd})`,
-      result: flattenedLineItems.length,
-    },
-    {
-      formula: `SUM(I${summaryDataStart}:I${summaryDataEnd})`,
-      result: flattenedLineItems.reduce((sum, entry) => sum + entry.total, 0),
-    },
+    formulaOrZero(
+      sortedContracts.length > 0,
+      `SUM(H${summaryDataStart}:H${summaryDataEnd})`,
+      flattenedLineItems.length,
+    ),
+    formulaOrZero(
+      sortedContracts.length > 0,
+      `SUM(I${summaryDataStart}:I${summaryDataEnd})`,
+      flattenedLineItems.reduce((sum, entry) => sum + entry.total, 0),
+    ),
   ]);
   clearTrailingCells(summarySheet, summaryFooterRow, 10);
 
-  dashboardSheet.spliceRows(16, Math.max(0, dashboardSheet.rowCount - 15));
-  const grandTotal = flattenedLineItems.reduce((sum, entry) => sum + entry.total, 0);
+  deleteRowsFrom(dashboardSheet, 16);
+  const grandTotal = flattenedLineItems.reduce(
+    (sum, entry) => sum + entry.total,
+    0,
+  );
   const averageLineValue =
-    flattenedLineItems.length === 0 ? 0 : grandTotal / flattenedLineItems.length;
+    flattenedLineItems.length === 0
+      ? 0
+      : grandTotal / flattenedLineItems.length;
   const largestLineValue = flattenedLineItems.reduce(
     (max, entry) => Math.max(max, entry.total),
     0,
   );
 
-  dashboardSheet.getCell("B4").value = {
-    formula: `COUNTA(Summary!C${summaryDataStart}:C${summaryDataEnd})`,
-    result: sortedContracts.length,
-  };
-  dashboardSheet.getCell("B5").value = {
-    formula: `COUNTA('Line Items'!A${lineItemDataStart}:A${lineItemDataEnd})`,
-    result: flattenedLineItems.length,
-  };
-  dashboardSheet.getCell("B6").value = {
-    formula: `SUM('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
-    result: grandTotal,
-  };
-  dashboardSheet.getCell("B7").value = {
-    formula: `AVERAGE('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
-    result: averageLineValue,
-  };
-  dashboardSheet.getCell("B8").value = {
-    formula: `MAX('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
-    result: largestLineValue,
-  };
+  dashboardSheet.getCell("B4").value = formulaOrZero(
+    sortedContracts.length > 0,
+    `COUNTA(Summary!C${summaryDataStart}:C${summaryDataEnd})`,
+    sortedContracts.length,
+  );
+  dashboardSheet.getCell("B5").value = formulaOrZero(
+    flattenedLineItems.length > 0,
+    `COUNTA('Line Items'!A${lineItemDataStart}:A${lineItemDataEnd})`,
+    flattenedLineItems.length,
+  );
+  dashboardSheet.getCell("B6").value = formulaOrZero(
+    flattenedLineItems.length > 0,
+    `SUM('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
+    grandTotal,
+  );
+  dashboardSheet.getCell("B7").value = formulaOrZero(
+    flattenedLineItems.length > 0,
+    `AVERAGE('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
+    averageLineValue,
+  );
+  dashboardSheet.getCell("B8").value = formulaOrZero(
+    flattenedLineItems.length > 0,
+    `MAX('Line Items'!H${lineItemDataStart}:H${lineItemDataEnd})`,
+    largestLineValue,
+  );
 
   for (const [status, cell] of [
     ["DRAFT", "B9"],
     ["FINALIZED", "B10"],
     ["ARCHIVED", "B11"],
   ] as const) {
-    dashboardSheet.getCell(cell).value = {
-      formula: `COUNTIF(Summary!G${summaryDataStart}:G${summaryDataEnd},"${status}")`,
-      result: sortedContracts.filter((contract) => contract.status === status)
-        .length,
-    };
+    dashboardSheet.getCell(cell).value = formulaOrZero(
+      sortedContracts.length > 0,
+      `COUNTIF(Summary!G${summaryDataStart}:G${summaryDataEnd},"${status}")`,
+      sortedContracts.filter((contract) => contract.status === status).length,
+    );
   }
 
   setRowValues(dashboardSheet, 15, [
     organisation.id,
-    {
-      formula: `COUNTIF(Summary!$A$${summaryDataStart}:$A$${summaryDataEnd},A15)`,
-      result: sortedContracts.length,
-    },
-    {
-      formula: `SUMIF(Summary!$A$${summaryDataStart}:$A$${summaryDataEnd},A15,Summary!$I$${summaryDataStart}:$I$${summaryDataEnd})`,
-      result: grandTotal,
-    },
+    formulaOrZero(
+      sortedContracts.length > 0,
+      `COUNTIF(Summary!$A$${summaryDataStart}:$A$${summaryDataEnd},A15)`,
+      sortedContracts.length,
+    ),
+    formulaOrZero(
+      sortedContracts.length > 0,
+      `SUMIF(Summary!$A$${summaryDataStart}:$A$${summaryDataEnd},A15,Summary!$I$${summaryDataStart}:$I$${summaryDataEnd})`,
+      grandTotal,
+    ),
   ]);
 
-  const output = (await workbook.xlsx.writeBuffer()) as ArrayBuffer | Uint8Array;
+  const output = (await workbook.xlsx.writeBuffer()) as
+    | ArrayBuffer
+    | Uint8Array;
   return Buffer.from(
     output instanceof Uint8Array ? output : new Uint8Array(output),
   );

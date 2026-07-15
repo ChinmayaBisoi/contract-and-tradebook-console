@@ -557,9 +557,19 @@ export function TradebookReviewWorkspace({
           <CardContent className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              render={<Link href={data.exportPath} />}
+              render={
+                <Link href={`/api/org/${organisationId}/export?format=excel`} />
+              }
             >
-              Export workbook
+              Export Excel
+            </Button>
+            <Button
+              variant="outline"
+              render={
+                <Link href={`/api/org/${organisationId}/export?format=json`} />
+              }
+            >
+              Export JSON
             </Button>
             <Button render={<Link href={`/org/${organisationId}/contracts`} />}>
               View contracts
@@ -608,9 +618,6 @@ export function TradebookReviewWorkspace({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" render={<Link href={data.exportPath} />}>
-            Export workbook
-          </Button>
           <Button
             variant="outline"
             onClick={handleSave}

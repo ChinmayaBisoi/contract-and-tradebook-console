@@ -478,7 +478,14 @@ export function OrganisationDashboardView(
       <div className="px-4 pt-4 lg:px-6">
         <TabsList variant="line">
           <TabsTrigger value="organisations">Organisations</TabsTrigger>
-          <TabsTrigger value="invitations">Invitations</TabsTrigger>
+          <TabsTrigger value="invitations">
+            Invitations
+            {props.pendingReceivedCount > 0 ? (
+              <Badge variant="secondary" className="ml-2">
+                {props.pendingReceivedCount}
+              </Badge>
+            ) : null}
+          </TabsTrigger>
         </TabsList>
       </div>
       <TabsContent value="organisations" className="px-4 pb-6 lg:px-6">
@@ -506,6 +513,11 @@ export function OrganisationDashboardView(
           className="overflow-hidden rounded-xl border bg-card shadow-xs"
           aria-busy={props.isFetching || undefined}
         >
+          {props.mutationError ? (
+            <div role="alert" className="border-b bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {props.mutationError}
+            </div>
+          ) : null}
           <Filters props={props} />
           {props.error ? (
             <TableErrorState error={props.error} onRetry={props.onRetry} />

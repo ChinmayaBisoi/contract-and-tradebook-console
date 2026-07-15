@@ -5,7 +5,10 @@ import {
   ContractExtractionError,
   extractContractProposal,
 } from "@/lib/contracts/contract-extraction";
-import { parseContractJson } from "@/lib/contracts/contract-proposal";
+import {
+  parseContractJson,
+  parseContractJsonFile,
+} from "@/lib/contracts/contract-proposal";
 
 const validContractJson = {
   client_name: "Acme Trading",
@@ -43,6 +46,22 @@ describe("contract proposal parsing", () => {
           pricingUnit: "MT",
         },
       ],
+    });
+  });
+
+  it("re-imports organisation JSON exports with derived totals", () => {
+    const exported = {
+      ...validContractJson,
+      items: [{ ...validContractJson.items[0], total: 1250 }],
+    };
+
+    expect(parseContractJsonFile([exported, exported])).toHaveLength(2);
+    expect(parseContractJson(exported).items[0]).toEqual({
+      description: "Copper cathodes",
+      quantity: 10,
+      quantityUnit: "MT",
+      unitPrice: 125,
+      pricingUnit: "MT",
     });
   });
 
