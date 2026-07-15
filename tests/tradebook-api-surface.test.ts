@@ -32,4 +32,8 @@ describe("tradebook import API surface", () => {
   it("returns saved sparse review state so review sessions can resume", () => {
     expect(source).toContain("review: reviewState(record)");
   });
+
+  it("returns export metadata for reviewed workbook downloads", () => {
+    expect(source).toContain("exportPath");
+  });
 });

@@ -5,6 +5,7 @@ import {
   createOrganisationMembershipFinder,
   type OrganisationMembership,
 } from "@/lib/organisation-access";
+import { publishTradebookEvent } from "@/lib/tradebook/events";
 
 export type TradebookUploadMetadata = {
   organisationId: string;
@@ -113,6 +114,14 @@ export async function completeTradebookUpload(
       },
       update: {},
       select: { id: true },
+    });
+
+    publishTradebookEvent({
+      type: "upload.updated",
+      organisationId: input.organisationId,
+      importId: input.uploadId,
+      uploadId: input.uploadId,
+      status: "UPLOADED",
     });
 
     return { uploadId: input.uploadId, importReady: true as const };
