@@ -355,17 +355,18 @@ export function TradebookReviewWorkspace({
     trpc.tradebookImport.get.queryOptions({ organisationId, importId }),
   );
   const initialMapping = asMapping(data.mapping);
+  const initialSourceOrganisationId =
+    data.selectedSourceOrganisationId ??
+    (initialMapping.sourceOrganisations.length === 1
+      ? (initialMapping.sourceOrganisations[0]?.id ?? "")
+      : "");
   const [sheets, setSheets] = useState(initialMapping.sheets);
   const [activeSheet, setActiveSheet] = useState(
     initialMapping.sheets[0]?.name ?? "",
   );
   const [offset, setOffset] = useState(0);
   const [selectedSourceOrganisationId, setSelectedSourceOrganisationId] =
-    useState(
-      data.selectedSourceOrganisationId ??
-        initialMapping.sourceOrganisations[0]?.id ??
-        "",
-    );
+    useState(initialSourceOrganisationId);
   const [patches, setPatches] = useState<CellPatch[]>(data.review.patches);
   const [discardedContractRows, setDiscardedContractRows] = useState<number[]>(
     data.review.discardedContractRows,
