@@ -1,0 +1,71 @@
+{
+  "family": "__TASK_FAMILY__",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "__EXECUTION_ROLE_ARN__",
+  "taskRoleArn": "__TASK_ROLE_ARN__",
+  "containerDefinitions": [
+    {
+      "name": "__CONTAINER_NAME__",
+      "image": "__IMAGE__",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+          "value": "__NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY__"
+        },
+        {
+          "name": "NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL",
+          "value": "__NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL__"
+        },
+        {
+          "name": "NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL",
+          "value": "__NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL__"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "__DATABASE_URL_SECRET_ARN__"
+        },
+        {
+          "name": "DIRECT_URL",
+          "valueFrom": "__DIRECT_URL_SECRET_ARN__"
+        },
+        {
+          "name": "CLERK_SECRET_KEY",
+          "valueFrom": "__CLERK_SECRET_KEY_SECRET_ARN__"
+        },
+        {
+          "name": "UPLOADTHING_TOKEN",
+          "valueFrom": "__UPLOADTHING_TOKEN_SECRET_ARN__"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "__LOG_GROUP__",
+          "awslogs-region": "__AWS_REGION__",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

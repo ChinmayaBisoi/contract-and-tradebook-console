@@ -1,177 +1,183 @@
-# AWS EC2 deployment runbook
+# AWS CloudFront + ECS deployment runbook
 
-This project deploys to AWS EC2 with GitHub Actions using branch-driven environments:
+This project deploys the standalone Next.js application from `my-app/` to AWS using:
 
-- Push to `staging` deploys to staging EC2
-- Push to `main` deploys to production EC2
+- **ECR** for the production image
+- **ECS Fargate** for the running container
+- **Application Load Balancer** as the CloudFront origin
+- **CloudFront** as the public entry point and cache layer
+- **GitHub Actions** with AWS OIDC for CI/CD
 
-No Docker images are used in deployment.
+The checked-in workflow is `.github/workflows/deploy.yml`.
 
-## 1) Provision infrastructure
+## 1) Runtime shape
 
-### Option A: AWS CLI (recommended for account 344626518162)
+The deployment keeps the existing production contract:
 
-From `my-app`:
+- `next.config.ts` uses `output: "standalone"`
+- `Dockerfile` builds the app and runs `node server.js`
+- `/api/health` provides the ALB and post-deploy smoke-check endpoint
 
-```bash
-# One-time: configure AWS profile (SSO or access keys)
-./scripts/aws/setup-profile.sh sso https://your-org.awsapps.com/start us-east-1
-aws sso login --profile contract-console
+Traffic flow:
 
-# Or with IAM access keys:
-./scripts/aws/setup-profile.sh keys
+`CloudFront -> ALB -> ECS Fargate task -> Next.js standalone server -> Neon Postgres`
 
-# Provision staging + production EC2, EIPs, security groups, IAM
-AWS_PROFILE=contract-console ./scripts/aws/provision.sh
+## 2) AWS resources
 
-# Bootstrap both instances
-./scripts/aws/bootstrap-instances.sh <staging-ip> <production-ip>
-```
+Create or verify the following resources per environment:
 
-`provision.sh` creates:
+- ECR repository for the application image
+- ECS cluster
+- ECS service
+- ECS task definition family
+- ALB and target group
+- CloudFront distribution with the ALB as the origin
+- CloudWatch log group for the container
+- ECS execution role
+- ECS task role
 
-- One EC2 for `staging`
-- One EC2 for `production`
-- Elastic IP per instance
-- Security groups (22, 80, 443)
-- IAM role/profile with SSM access
-- EC2 key pair from `~/.ssh/contract-console-deploy.pub`
+Recommended target-group health check:
 
-Destroy everything:
+- Path: `/api/health`
+- Port: `traffic-port`
+- Protocol: `HTTP`
+- Matcher: `200`
 
-```bash
-AWS_PROFILE=contract-console ./scripts/aws/provision.sh --destroy
-```
+Recommended CloudFront behaviors:
 
-### Option B: Terraform
+- Default behavior: forward to ALB with caching disabled or minimized for dynamic app routes
+- `/_next/static/*`: enable long TTL caching
+- Static assets under `/public`: enable long TTL caching when filenames are versioned
 
-From `my-app/infra`:
+## 3) Secrets and configuration
 
-```bash
-terraform init
-terraform apply \
-  -var="deploy_public_key=ssh-ed25519 AAAA... your-key" \
-  -var="aws_region=us-east-1"
-```
+### GitHub environment secrets
 
-Terraform creates:
+Set these in both `staging` and `production` environments:
 
-- One EC2 for `staging`
-- One EC2 for `production`
-- Elastic IP per instance
-- Security groups
-- IAM role/profile with SSM access
-- EC2 key pair from your public key
-
-## 2) Bootstrap each EC2 instance
-
-Copy this repository to each instance once, then run:
-
-```bash
-sudo bash scripts/ec2/bootstrap.sh
-```
-
-After bootstrap, edit `/etc/contract-console/env` and set:
-
-- `DATABASE_URL` for that environment
-- `NODE_ENV=production`
-- `PORT=3000`
-
-Then restart the service:
-
-```bash
-sudo systemctl restart contract-console
-```
-
-## 2.5) Neon database branches
-
-Create two Neon branches or two Neon databases:
-
-- One for staging
-- One for production
-
-Use each environment's connection strings as `DATABASE_URL` and `DIRECT_URL` in GitHub environment secrets.
-
-## 3) GitHub setup
-
-Create environments:
-
-- `staging`
-- `production`
-
-Required environment secrets for each:
-
-- `EC2_HOST`
-- `EC2_USER`
-- `EC2_SSH_KEY`
+- `AWS_DEPLOY_ROLE_ARN`
 - `DATABASE_URL`
 - `DIRECT_URL`
+- `CLOUDFRONT_URL`
 
-The deploy workflow is `.github/workflows/deploy.yml`.
+### GitHub environment variables
 
-Helper command (run twice, once per environment):
+Set these in both `staging` and `production` environments:
 
-```bash
-./scripts/github/setup-environments.sh \
-  ChinmayaBisoi/contract-and-tradebook-console \
-  staging \
-  <staging-ec2-host> \
-  deploy \
-  ~/.ssh/contract-console-deploy \
-  "<staging-database-url>" \
-  "<staging-direct-url>"
-```
+- `AWS_REGION`
+- `ECR_REPOSITORY`
+- `ECS_CLUSTER`
+- `ECS_SERVICE`
+- `ECS_TASK_FAMILY`
+- `ECS_CONTAINER_NAME`
+- `ECS_LOG_GROUP`
+- `ECS_EXECUTION_ROLE_ARN`
+- `ECS_TASK_ROLE_ARN`
+- `DATABASE_URL_SECRET_ARN`
+- `DIRECT_URL_SECRET_ARN`
+- `CLERK_SECRET_KEY_SECRET_ARN`
+- `UPLOADTHING_TOKEN_SECRET_ARN`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`
 
-```bash
-./scripts/github/setup-environments.sh \
-  ChinmayaBisoi/contract-and-tradebook-console \
-  production \
-  <production-ec2-host> \
-  deploy \
-  ~/.ssh/contract-console-deploy \
-  "<production-database-url>" \
-  "<production-direct-url>"
-```
+### AWS secret stores
 
-Also create and push the `staging` branch:
+For the ECS task runtime, store sensitive app values in AWS Secrets Manager or SSM Parameter Store and provide the resulting ARNs through the GitHub environment variables listed above.
 
-```bash
-git checkout -b staging
-git push -u origin staging
-```
+At minimum, the ECS task should receive:
 
-## 4) First deployment
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `CLERK_SECRET_KEY`
+- `UPLOADTHING_TOKEN`
 
-1. Push to `staging`.
-2. Confirm workflow success in Actions.
-3. SSH to staging instance and verify:
+## 4) Deployment workflow
 
-```bash
-sudo systemctl status contract-console
-curl -I http://127.0.0.1:3000
-curl -I http://<staging-elastic-ip>
-```
+On pushes to `staging` or `main`, the workflow:
 
-4. Push to `main` after staging passes.
+1. installs dependencies with Bun
+2. runs lint, tests, Prisma generation, and a production build
+3. assumes the AWS deploy role through OIDC
+4. logs in to ECR
+5. builds and pushes the production Docker image tagged with the Git SHA
+6. runs `prisma migrate deploy` against the target database
+7. renders the ECS task definition from `aws/task-definition.json`
+8. registers the new ECS task definition and updates the ECS service
+9. waits for ECS to reach steady state
+10. smoke-checks the CloudFront URL and `/api/health`
 
-## 5) Rollback
+## 5) Manual AWS setup checklist
 
-On the target EC2:
-
-```bash
-sudo ls -1dt /opt/contract-console/releases/* | head
-sudo ln -sfn /opt/contract-console/releases/<previous_sha> /opt/contract-console/current
-sudo systemctl restart contract-console
-```
-
-## 6) Optional HTTPS with custom domain
-
-If domain DNS already points to EC2 Elastic IP:
+Before the workflow can succeed, verify:
 
 ```bash
-sudo dnf install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d staging.yourdomain.com
-sudo certbot --nginx -d app.yourdomain.com
+aws ecr describe-repositories --repository-names <repo>
+aws ecs describe-clusters --clusters <cluster>
+aws ecs describe-services --cluster <cluster> --services <service>
+aws cloudfront list-distributions
 ```
 
-Ensure security group allows `443/tcp`.
+Also confirm:
+
+- the ECS service uses subnets and security groups that allow ALB-to-task traffic on port `3000`
+- the ALB target group points to the ECS service
+- the CloudFront origin points to the ALB DNS name
+- the CloudFront certificate is valid in `us-east-1` when using a custom domain
+
+## 6) Local validation
+
+From `my-app/`:
+
+```bash
+bun run test
+bun run lint:ci
+bun run build
+```
+
+Render the ECS task definition locally:
+
+```bash
+IMAGE_URI=example.dkr.ecr.us-east-1.amazonaws.com/contractview:test \
+TASK_FAMILY=contractview \
+CONTAINER_NAME=contractview \
+AWS_REGION=us-east-1 \
+LOG_GROUP=/ecs/contractview \
+EXECUTION_ROLE_ARN=arn:aws:iam::123456789012:role/ecsExecution \
+TASK_ROLE_ARN=arn:aws:iam::123456789012:role/contractviewTask \
+DATABASE_URL_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:database \
+DIRECT_URL_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:direct \
+CLERK_SECRET_KEY_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:clerk \
+UPLOADTHING_TOKEN_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:uploadthing \
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_example \
+NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=/dashboard \
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+node scripts/aws/render-ecs-task-definition.mjs aws/task-definition.json /tmp/task-definition.rendered.json
+```
+
+Smoke-check a live distribution:
+
+```bash
+CLOUDFRONT_URL=https://example.cloudfront.net ./scripts/aws/smoke-check.sh
+```
+
+## 7) Rollback
+
+Rollback means redeploying a previous ECR image tag:
+
+1. identify the last known good image tag
+2. re-render the task definition with that image
+3. register the task definition
+4. update the ECS service to that revision
+5. rerun the smoke check
+
+Example:
+
+```bash
+aws ecs describe-services --cluster <cluster> --services <service>
+aws ecs list-task-definitions --family-prefix <task-family> --sort DESC
+```
+
+## 8) Notes about Nx
+
+Nx is present at the workspace level, but this deployment path does not depend on a full Nx migration. The current AWS pipeline deploys the real app from `my-app/` and can later be accelerated with Nx task caching once the runtime path is stable.
