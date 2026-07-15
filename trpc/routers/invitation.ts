@@ -7,6 +7,7 @@ import {
   type OrganisationUserStatus,
 } from "@/lib/organisation-access";
 import type { OrganisationUserRole } from "@/lib/permissions";
+import { publishRealtimeEvent } from "@/lib/realtime/events";
 import {
   type AuthContext,
   createTRPCRouter,
@@ -55,7 +56,7 @@ type InvitationRouterDb = {
     count: (args: unknown) => Promise<number>;
     findUnique: (args: unknown) => Promise<InvitationRecord | null>;
     findFirst: (args: unknown) => Promise<{ id: string } | null>;
-    create: (args: unknown) => Promise<InvitationRecord | { id: string }>;
+    create: (args: unknown) => Promise<InvitationRecord>;
     update: (args: unknown) => Promise<InvitationRecord>;
     updateMany: (args: unknown) => Promise<{ count: number }>;
   };
@@ -173,6 +174,10 @@ async function writeInvitationAudit(
 
 function auditActor(auth: AuthContext) {
   return auth;
+}
+
+function invitationUserIds(...values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 function effectiveStatusFilter(status: InvitationStatus, now: Date) {
@@ -460,7 +465,7 @@ export const invitationRouter = createTRPCRouter({
         });
       }
 
-      return runInvitationWrite(
+      const invitation = await runInvitationWrite(
         () =>
           runInvitationTransaction(db, async (tx) => {
             const invitation = await tx.invitation.create({
@@ -492,6 +497,20 @@ export const invitationRouter = createTRPCRouter({
           }),
         "A pending invitation already exists for this email.",
       );
+
+      publishRealtimeEvent({
+        entity: "invitation",
+        action: "created",
+        entityId: invitation.id,
+        invitationId: invitation.id,
+        organisationId: input.organisationId,
+        userIds: invitationUserIds(
+          ctx.auth.clerkUserId,
+          invitation.inviterClerkUserId,
+        ),
+      });
+
+      return invitation;
     }),
 
   update: protectedProcedure
@@ -528,7 +547,7 @@ export const invitationRouter = createTRPCRouter({
         });
       }
 
-      return runInvitationWrite(() =>
+      const updated = await runInvitationWrite(() =>
         runInvitationTransaction(db, async (tx) => {
           const updated = await tx.invitation.update({
             where: { id: input.id, status: "PENDING" },
@@ -555,6 +574,20 @@ export const invitationRouter = createTRPCRouter({
           return updated;
         }),
       );
+
+      publishRealtimeEvent({
+        entity: "invitation",
+        action: "updated",
+        entityId: updated.id,
+        invitationId: updated.id,
+        organisationId: invitation.organisationId,
+        userIds: invitationUserIds(
+          ctx.auth.clerkUserId,
+          invitation.inviterClerkUserId,
+        ),
+      });
+
+      return updated;
     }),
 
   accept: protectedProcedure
@@ -572,7 +605,7 @@ export const invitationRouter = createTRPCRouter({
         });
       }
 
-      return runInvitationWrite(() =>
+      const updated = await runInvitationWrite(() =>
         runInvitationTransaction(db, async (tx) => {
           await tx.organisationUser.upsert({
             where: {
@@ -620,6 +653,20 @@ export const invitationRouter = createTRPCRouter({
           return updated;
         }),
       );
+
+      publishRealtimeEvent({
+        entity: "invitation",
+        action: "updated",
+        entityId: updated.id,
+        invitationId: updated.id,
+        organisationId: invitation.organisationId,
+        userIds: invitationUserIds(
+          ctx.auth.clerkUserId,
+          invitation.inviterClerkUserId,
+        ),
+      });
+
+      return updated;
     }),
 
   decline: protectedProcedure
@@ -630,7 +677,7 @@ export const invitationRouter = createTRPCRouter({
       ensureRecipient(invitation, ctx.auth.email);
       await ensurePending(db, invitation);
 
-      return runInvitationWrite(() =>
+      const updated = await runInvitationWrite(() =>
         runInvitationTransaction(db, async (tx) => {
           const updated = await tx.invitation.update({
             where: { id: invitation.id, status: "PENDING" },
@@ -651,6 +698,20 @@ export const invitationRouter = createTRPCRouter({
           return updated;
         }),
       );
+
+      publishRealtimeEvent({
+        entity: "invitation",
+        action: "updated",
+        entityId: updated.id,
+        invitationId: updated.id,
+        organisationId: invitation.organisationId,
+        userIds: invitationUserIds(
+          ctx.auth.clerkUserId,
+          invitation.inviterClerkUserId,
+        ),
+      });
+
+      return updated;
     }),
 
   cancel: protectedProcedure
@@ -665,7 +726,7 @@ export const invitationRouter = createTRPCRouter({
         action: "organisation:invitation:cancel",
       });
 
-      return runInvitationWrite(() =>
+      const updated = await runInvitationWrite(() =>
         runInvitationTransaction(db, async (tx) => {
           const updated = await tx.invitation.update({
             where: { id: invitation.id, status: "PENDING" },
@@ -686,5 +747,19 @@ export const invitationRouter = createTRPCRouter({
           return updated;
         }),
       );
+
+      publishRealtimeEvent({
+        entity: "invitation",
+        action: "updated",
+        entityId: updated.id,
+        invitationId: updated.id,
+        organisationId: invitation.organisationId,
+        userIds: invitationUserIds(
+          ctx.auth.clerkUserId,
+          invitation.inviterClerkUserId,
+        ),
+      });
+
+      return updated;
     }),
 });
