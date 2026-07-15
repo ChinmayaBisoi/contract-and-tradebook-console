@@ -138,4 +138,85 @@ describe("tradebook import upload procedures", () => {
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
+
+  it("lists only imports from the active organisation", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const count = vi.fn().mockResolvedValue(0);
+    const api = caller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "MEMBER",
+          status: "ACTIVE",
+        }),
+      },
+      tradebookImport: { findMany, count },
+    });
+
+    await expect(
+      api.tradebookImport.list({
+        organisationId: "org_1",
+        page: 1,
+        pageSize: 20,
+      }),
+    ).resolves.toMatchObject({
+      data: [],
+      pagination: { page: 1, pageSize: 20, total: 0, pageCount: 0 },
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { organisationId: "org_1" } }),
+    );
+  });
+
+  it("does not disclose an import from another organisation", async () => {
+    const api = caller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "MEMBER",
+          status: "ACTIVE",
+        }),
+      },
+      tradebookImport: { findFirst: vi.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      api.tradebookImport.get({
+        organisationId: "org_1",
+        importId: "import_elsewhere",
+      }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("returns terminal counts when an imported commit is retried", async () => {
+    const api = caller({
+      organisationUser: {
+        findUnique: vi.fn().mockResolvedValue({
+          role: "MEMBER",
+          status: "ACTIVE",
+        }),
+      },
+      tradebookImport: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "import_1",
+          organisationId: "org_1",
+          uploadId: "upload_1",
+          status: "IMPORTED",
+          importedContractCount: 14,
+          importedLineItemCount: 1153,
+          upload: { uploadedByClerkUserId: "member_1" },
+        }),
+      },
+    });
+
+    await expect(
+      api.tradebookImport.commit({
+        organisationId: "org_1",
+        importId: "import_1",
+      }),
+    ).resolves.toEqual({
+      importId: "import_1",
+      contractCount: 14,
+      lineItemCount: 1153,
+      discardedCount: 0,
+    });
+  });
 });
