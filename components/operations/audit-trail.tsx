@@ -4,7 +4,7 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 import { EyeIcon, SearchIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useQueryStates } from "nuqs";
-import { useTransition } from "react";
+import { type ReactNode, useState, useTransition } from "react";
 
 import { DebouncedInput } from "@/components/filters/debounced-input";
 import {
@@ -22,19 +22,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Table,
   TableCell,
@@ -67,7 +66,7 @@ function JsonPanel({
 }) {
   return (
     <div
-      className={`min-w-0 rounded-lg border-l-4 bg-muted/20 p-3 ${
+      className={`min-w-0 overflow-hidden rounded-lg border-l-4 bg-muted/20 p-3 ${
         tone === "before"
           ? "border-l-amber-500"
           : tone === "after"
@@ -79,18 +78,186 @@ function JsonPanel({
         {title}
       </h4>
       {value ? (
-        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+        <pre className="max-h-80 overflow-auto overscroll-contain whitespace-pre-wrap break-words font-mono text-xs">
           {JSON.stringify(value, null, 2)}
         </pre>
       ) : (
         <p className="text-sm text-muted-foreground">No state recorded.</p>
-      )}{" "}
+      )}
       {changed.length ? (
-        <p className="mt-3 text-xs text-muted-foreground">
+        <p className="mt-3 break-words text-xs text-muted-foreground">
           Changed: {changed.join(", ")}
         </p>
       ) : null}
     </div>
+  );
+}
+
+type AuditEventRow = {
+  id: string;
+  actorClerkUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  actorRole: "OWNER" | "ADMIN" | "MEMBER" | null;
+  action: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string | null;
+  beforeState?: unknown;
+  afterState?: unknown;
+  changedFields: string[];
+  metadata?: unknown;
+  contractId: string | null;
+  lineItemId: string | null;
+  uploadId: string | null;
+  tradebookImportId: string | null;
+  organisationUserId: string | null;
+  invitationId: string | null;
+  occurredAt: Date | string;
+};
+
+function DetailField({
+  label: fieldLabel,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">{fieldLabel}</dt>
+      <dd className="break-words">{children}</dd>
+    </div>
+  );
+}
+
+function AuditEventSheet({
+  organisationId,
+  event,
+  open,
+  onOpenChange,
+}: {
+  organisationId: string;
+  event: AuditEventRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!event) {
+    return null;
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex h-full w-full flex-col gap-0 p-0 sm:max-w-2xl lg:max-w-3xl">
+        <SheetHeader className="shrink-0 border-b px-4 py-4 pr-12">
+          <SheetTitle className="break-words pr-2">
+            {label(event.action)} · {event.entityLabel ?? event.entityId}
+          </SheetTitle>
+          <SheetDescription className="break-words">
+            {event.actorName ?? "Unknown user"} ·{" "}
+            {dateTime.format(new Date(event.occurredAt))}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="flex flex-col gap-4 p-4">
+            <dl className="grid min-w-0 gap-3 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-2">
+              <DetailField label="Organisation ID">
+                <span className="break-all font-mono text-xs">{organisationId}</span>
+              </DetailField>
+              <DetailField label="User ID">
+                <span className="break-all font-mono text-xs">
+                  {event.actorClerkUserId ?? "—"}
+                </span>
+              </DetailField>
+              <DetailField label="Entity ID">
+                <span className="break-all font-mono text-xs">{event.entityId}</span>
+              </DetailField>
+              <DetailField label="Actor email">
+                <span className="break-all">{event.actorEmail ?? "—"}</span>
+              </DetailField>
+              <DetailField label="Actor role">
+                {event.actorRole ? label(event.actorRole) : "—"}
+              </DetailField>
+              <DetailField label="Contract ID">
+                {event.contractId ? (
+                  <Link
+                    className="break-all font-mono text-xs underline underline-offset-4"
+                    href={`/org/${organisationId}/contracts/${event.contractId}/line-items`}
+                  >
+                    {event.contractId}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </DetailField>
+              <DetailField label="Line item ID">
+                {event.lineItemId ? (
+                  <Link
+                    className="break-all font-mono text-xs underline underline-offset-4"
+                    href={`/org/${organisationId}/line-items?q=${encodeURIComponent(event.lineItemId)}`}
+                  >
+                    {event.lineItemId}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </DetailField>
+              <DetailField label="Upload ID">
+                {event.uploadId ? (
+                  <Link
+                    className="break-all font-mono text-xs underline underline-offset-4"
+                    href={`/org/${organisationId}/imports?upload=${encodeURIComponent(event.uploadId)}`}
+                  >
+                    {event.uploadId}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </DetailField>
+              <DetailField label="Tradebook import ID">
+                <span className="break-all font-mono text-xs">
+                  {event.tradebookImportId ?? "—"}
+                </span>
+              </DetailField>
+              <DetailField label="Organisation member ID">
+                {event.organisationUserId ? (
+                  <Link
+                    className="break-all font-mono text-xs underline underline-offset-4"
+                    href={`/org/${organisationId}/teams`}
+                  >
+                    {event.organisationUserId}
+                  </Link>
+                ) : (
+                  "—"
+                )}
+              </DetailField>
+              <DetailField label="Invitation ID">
+                <span className="break-all font-mono text-xs">
+                  {event.invitationId ?? "—"}
+                </span>
+              </DetailField>
+            </dl>
+            <div className="grid min-w-0 gap-3 xl:grid-cols-2">
+              <JsonPanel
+                title="Before"
+                value={event.beforeState}
+                changed={event.changedFields}
+                tone="before"
+              />
+              <JsonPanel
+                title="After"
+                value={event.afterState}
+                changed={event.changedFields}
+                tone="after"
+              />
+            </div>
+            {event.metadata ? (
+              <JsonPanel title="Metadata" value={event.metadata} changed={[]} />
+            ) : null}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -142,6 +309,7 @@ export function OrganisationAuditTrail({
   };
   const rows = data?.data ?? [];
   const showEmpty = !isLoading && rows.length === 0;
+  const [selectedEvent, setSelectedEvent] = useState<AuditEventRow | null>(null);
 
   return (
     <section aria-labelledby="audit-title" className="space-y-4">
@@ -340,11 +508,11 @@ export function OrganisationAuditTrail({
                           {label(row.entityType)}
                         </div>
                       </TableCell>
-                      <TableCell className="max-w-72">
-                        <div className="flex flex-wrap gap-1">
+                      <TableCell className="max-w-72 min-w-0">
+                        <div className="flex max-h-24 flex-wrap gap-1 overflow-y-auto overscroll-contain">
                           {row.changedFields.length ? (
                             row.changedFields.map((field) => (
-                              <Badge key={field} variant="secondary">
+                              <Badge key={field} variant="secondary" className="max-w-full truncate">
                                 {field}
                               </Badge>
                             ))
@@ -356,173 +524,15 @@ export function OrganisationAuditTrail({
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Dialog>
-                          <DialogTrigger
-                            render={
-                              <Button type="button" variant="ghost" size="sm" />
-                            }
-                          >
-                            <EyeIcon aria-hidden="true" />
-                            View
-                          </DialogTrigger>
-                          <DialogContent className="max-w-4xl">
-                            <DialogHeader>
-                              <DialogTitle>
-                                {label(row.action)} ·{" "}
-                                {row.entityLabel ?? row.entityId}
-                              </DialogTitle>
-                              <DialogDescription>
-                                {row.actorName ?? "Unknown user"} ·{" "}
-                                {dateTime.format(new Date(row.occurredAt))}
-                              </DialogDescription>
-                            </DialogHeader>
-                            <dl className="grid gap-2 rounded-lg border bg-muted/20 p-3 text-sm sm:grid-cols-2">
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Organisation ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {organisationId}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  User ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.actorClerkUserId ?? "—"}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Entity ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.entityId}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Actor email
-                                </dt>
-                                <dd>{row.actorEmail ?? "—"}</dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Actor role
-                                </dt>
-                                <dd>
-                                  {row.actorRole ? label(row.actorRole) : "—"}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Contract ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.contractId ? (
-                                    <Link
-                                      className="underline underline-offset-4"
-                                      href={`/org/${organisationId}/contracts/${row.contractId}/line-items`}
-                                    >
-                                      {row.contractId}
-                                    </Link>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Line item ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.lineItemId ? (
-                                    <Link
-                                      className="underline underline-offset-4"
-                                      href={`/org/${organisationId}/line-items?q=${encodeURIComponent(row.lineItemId)}`}
-                                    >
-                                      {row.lineItemId}
-                                    </Link>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Upload ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.uploadId ? (
-                                    <Link
-                                      className="underline underline-offset-4"
-                                      href={`/org/${organisationId}/imports?upload=${encodeURIComponent(row.uploadId)}`}
-                                    >
-                                      {row.uploadId}
-                                    </Link>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Tradebook import ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.tradebookImportId ?? "—"}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Organisation member ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.organisationUserId ? (
-                                    <Link
-                                      className="underline underline-offset-4"
-                                      href={`/org/${organisationId}/teams`}
-                                    >
-                                      {row.organisationUserId}
-                                    </Link>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </dd>
-                              </div>
-                              <div>
-                                <dt className="text-muted-foreground">
-                                  Invitation ID
-                                </dt>
-                                <dd className="font-mono text-xs">
-                                  {row.invitationId ?? "—"}
-                                </dd>
-                              </div>
-                            </dl>
-                            <div className="grid gap-3 lg:grid-cols-2">
-                              <JsonPanel
-                                title="Before"
-                                value={row.beforeState}
-                                changed={row.changedFields}
-                                tone="before"
-                              />
-                              <JsonPanel
-                                title="After"
-                                value={row.afterState}
-                                changed={row.changedFields}
-                                tone="after"
-                              />
-                            </div>
-                            {row.metadata ? (
-                              <JsonPanel
-                                title="Metadata"
-                                value={row.metadata}
-                                changed={[]}
-                              />
-                            ) : null}
-                          </DialogContent>
-                        </Dialog>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedEvent(row)}
+                        >
+                          <EyeIcon aria-hidden="true" />
+                          View
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -537,6 +547,16 @@ export function OrganisationAuditTrail({
           />
         </CardContent>
       </Card>
+      <AuditEventSheet
+        organisationId={organisationId}
+        event={selectedEvent}
+        open={selectedEvent !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedEvent(null);
+          }
+        }}
+      />
     </section>
   );
 }
