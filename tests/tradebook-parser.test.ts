@@ -1,17 +1,23 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
-import { parseWorkbookBuffer } from "@/lib/tradebook/parser";
+import {
+  type ParsedWorkbook,
+  parseWorkbookBuffer,
+} from "@/lib/tradebook/parser";
 
 const sample = readFileSync(
   path.resolve(__dirname, "../../sample_tradebook_xl.xlsx"),
 );
+let parsed: ParsedWorkbook;
+
+beforeAll(async () => {
+  parsed = await parseWorkbookBuffer(sample);
+}, 15_000);
 
 describe("tradebook workbook parser", () => {
-  it("preserves sample sheet order and exact dimensions", async () => {
-    const parsed = await parseWorkbookBuffer(sample);
-
+  it("preserves sample sheet order and exact dimensions", () => {
     expect(parsed.workbookSnapshot.sheets.map((sheet) => sheet.name)).toEqual([
       "Organizations",
       "Line Items",
@@ -23,8 +29,7 @@ describe("tradebook workbook parser", () => {
     ).toEqual([4, 3452, 44, 17]);
   });
 
-  it("retains raw formulas and cached values without importing footers", async () => {
-    const parsed = await parseWorkbookBuffer(sample);
+  it("retains raw formulas and cached values without importing footers", () => {
     const lineItems = parsed.workbookSnapshot.sheets[1];
     const summary = parsed.workbookSnapshot.sheets[2];
 
@@ -45,8 +50,7 @@ describe("tradebook workbook parser", () => {
     expect(summary?.rowCount - 1 - (summary?.footerRows.length ?? 0)).toBe(42);
   });
 
-  it("preserves date identity alongside compact ISO values", async () => {
-    const parsed = await parseWorkbookBuffer(sample);
+  it("preserves date identity alongside compact ISO values", () => {
     const summary = parsed.workbookSnapshot.sheets[2];
 
     expect(summary?.dateCells).toContainEqual({

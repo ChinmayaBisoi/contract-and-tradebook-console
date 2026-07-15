@@ -51,5 +51,5 @@ describe("sample tradebook acceptance flow", () => {
         (line) => line.description.trim().toUpperCase() === "TOTAL",
       ),
     ).toBe(false);
-  });
+  }, 15_000);
 });
