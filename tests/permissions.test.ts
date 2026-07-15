@@ -65,11 +65,34 @@ describe("organisation permission matrix", () => {
     expect(
       hasOrgPermission({ role: "ADMIN", action: "organisation:delete" }),
     ).toBe(false);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "contract:create" }),
+    ).toBe(true);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "contract:update" }),
+    ).toBe(true);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "line-item:create" }),
+    ).toBe(true);
+    expect(
+      hasOrgPermission({ role: "ADMIN", action: "line-item:update" }),
+    ).toBe(true);
   });
 
-  it("lets members read organisation analytics and the team directory", () => {
+  it("keeps members read-only for contracts and team directory", () => {
     expect(getPermissionsForOrgRole("MEMBER")).toEqual(
-      new Set(["organisation:read", "organisation:user:read"]),
+      new Set([
+        "organisation:read",
+        "organisation:user:read",
+        "contract:read",
+        "line-item:read",
+      ]),
     );
+    expect(
+      hasOrgPermission({ role: "MEMBER", action: "contract:update" }),
+    ).toBe(false);
+    expect(
+      hasOrgPermission({ role: "MEMBER", action: "line-item:update" }),
+    ).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
-import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { buildContractFieldData } from "@/lib/contracts/contract-field-data";
 import { contractInputSchema } from "@/lib/contracts/contract-schemas";
+import { Prisma } from "@/lib/generated/prisma/client";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,

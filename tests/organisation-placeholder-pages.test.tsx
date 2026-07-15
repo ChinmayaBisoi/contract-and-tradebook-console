@@ -3,35 +3,17 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import OrganisationAuditTrailPage from "@/app/(protected)/org/[orgId]/audit-trail/page";
-import OrganisationContractsPage from "@/app/(protected)/org/[orgId]/contracts/page";
 import OrganisationImportsPage from "@/app/(protected)/org/[orgId]/imports/page";
 
 type OrganisationSectionPage = (props: {
   params: Promise<{ orgId: string }>;
-}) => Promise<ReactNode>;
+}) => ReactNode | Promise<ReactNode>;
 
 async function renderPage(Page: OrganisationSectionPage) {
   render(await Page({ params: Promise.resolve({ orgId: "org_1" }) }));
 }
 
 describe("organisation placeholder pages", () => {
-  it("honestly explains that contract storage is unavailable", async () => {
-    await renderPage(OrganisationContractsPage);
-
-    expect(
-      screen.getByRole("heading", { name: "Contracts" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /contract storage is not connected.*this organisation yet/i,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /analytics/i })).toHaveAttribute(
-      "href",
-      "/org/org_1",
-    );
-  });
-
   it("honestly explains that audit event storage is unavailable", async () => {
     await renderPage(OrganisationAuditTrailPage);
 
@@ -67,7 +49,6 @@ describe("organisation placeholder pages", () => {
   });
 
   it.each([
-    ["contracts", OrganisationContractsPage],
     ["audit trail", OrganisationAuditTrailPage],
     ["imports", OrganisationImportsPage],
   ])("does not fabricate %s records or controls", async (_, Page) => {
