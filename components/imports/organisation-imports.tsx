@@ -38,6 +38,7 @@ const date = new Intl.DateTimeFormat("en-GB", {
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  timeZone: "UTC",
 });
 const number = new Intl.NumberFormat("en-US");
 const labels = {

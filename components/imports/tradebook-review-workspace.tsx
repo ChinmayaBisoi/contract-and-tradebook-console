@@ -212,6 +212,7 @@ function SheetPreview({
   const columns = Array.from({ length: columnCount }, (_, index) => index + 1);
   const canDiscard = sheet.role === "SUMMARY" || sheet.role === "LINE_ITEMS";
   const headerRow = sheet.headerRow ?? 1;
+  const footerRows = new Set(data.sheet.footerRows);
 
   return (
     <div className="space-y-3">
@@ -260,7 +261,7 @@ function SheetPreview({
             const row = data.rows[virtualRow.index];
             if (!row) return null;
             const isHeader = row.rowNumber === headerRow;
-            const isFooter = data.sheet.footerRows.includes(row.rowNumber);
+            const isFooter = footerRows.has(row.rowNumber);
             const isDiscarded = discarded.has(row.rowNumber);
             return (
               <div
@@ -373,7 +374,7 @@ export function TradebookReviewWorkspace({
     data.review.discardedLineItemRows,
   );
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>(
-    asErrors(data.validationErrors),
+    () => asErrors(data.validationErrors),
   );
   const [readyToImport, setReadyToImport] = useState(data.status === "MAPPED");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
