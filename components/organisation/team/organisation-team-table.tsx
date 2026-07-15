@@ -6,7 +6,7 @@ import {
   ArrowUpIcon,
   SearchXIcon,
 } from "lucide-react";
-
+import { MemberActions } from "@/components/organisation/team/member-actions";
 import type {
   TeamSort,
   TeamSortDirection,
@@ -87,16 +87,32 @@ function SortButton({
 
 export function OrganisationTeamTable({
   members,
+  requesterRole,
+  isMutating,
   hasFilters,
   sort,
   sortDirection,
   onSort,
+  onChangeRole,
+  onChangeStatus,
+  onRemove,
 }: {
   members: OrganisationTeamMember[];
+  requesterRole: "OWNER" | "ADMIN" | "MEMBER";
+  isMutating: boolean;
   hasFilters: boolean;
   sort: TeamSort;
   sortDirection: TeamSortDirection;
   onSort: (sort: TeamSort) => void;
+  onChangeRole: (
+    member: OrganisationTeamMember,
+    role: "OWNER" | "ADMIN" | "MEMBER",
+  ) => Promise<boolean>;
+  onChangeStatus: (
+    member: OrganisationTeamMember,
+    status: "ACTIVE" | "DISABLED",
+  ) => Promise<boolean>;
+  onRemove: (member: OrganisationTeamMember) => Promise<boolean>;
 }) {
   if (members.length === 0) {
     return (
@@ -119,6 +135,17 @@ export function OrganisationTeamTable({
       </div>
     );
   }
+
+  const hasActions =
+    requesterRole !== "MEMBER" &&
+    members.some(
+      (member) =>
+        (requesterRole === "OWNER" && member.canChangeRole) ||
+        (member.canChangeStatus &&
+          (requesterRole === "OWNER" ||
+            (requesterRole === "ADMIN" && member.role === "MEMBER"))) ||
+        (requesterRole === "OWNER" && member.canRemove),
+    );
 
   return (
     <Table aria-label="Organisation members">
@@ -161,6 +188,9 @@ export function OrganisationTeamTable({
               onSort={onSort}
             />
           </TableHead>
+          {hasActions ? (
+            <TableHead className="text-right">Actions</TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -193,6 +223,18 @@ export function OrganisationTeamTable({
                   {dateFormatter.format(joinedAt)}
                 </time>
               </TableCell>
+              {hasActions ? (
+                <TableCell className="text-right">
+                  <MemberActions
+                    member={member}
+                    requesterRole={requesterRole}
+                    isPending={isMutating}
+                    onChangeRole={(role) => onChangeRole(member, role)}
+                    onChangeStatus={(status) => onChangeStatus(member, status)}
+                    onRemove={() => onRemove(member)}
+                  />
+                </TableCell>
+              ) : null}
             </TableRow>
           );
         })}
