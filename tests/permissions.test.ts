@@ -86,6 +86,7 @@ describe("organisation permission matrix", () => {
         "organisation:user:read",
         "contract:read",
         "line-item:read",
+        "audit:read",
       ]),
     );
     expect(

@@ -63,7 +63,10 @@ export function ContractDetail({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <EditContractDialog organisationId={organisationId} contract={data} />
+          <EditContractDialog
+            organisationId={organisationId}
+            contract={{ ...data, poDate: new Date(data.poDate) }}
+          />
           <CreateLineItemDialog
             organisationId={organisationId}
             contractId={data.id}

@@ -39,8 +39,11 @@ describe("contract domain Prisma schema", () => {
     expect(readBlock(schema, "enum", "ContractStatus")).toMatch(
       /DRAFT[\s\S]*FINALIZED[\s\S]*ARCHIVED/,
     );
-    expect(readBlock(schema, "enum", "ContractEventType")).toMatch(
-      /CREATE[\s\S]*UPDATE[\s\S]*STATUS_CHANGE[\s\S]*DELETE[\s\S]*IMPORT/,
+    expect(readBlock(schema, "enum", "AuditAction")).toMatch(
+      /CREATE[\s\S]*UPDATE[\s\S]*STATUS_CHANGE[\s\S]*DELETE[\s\S]*IMPORT[\s\S]*ROLE_CHANGE[\s\S]*INVITE[\s\S]*ACCEPT[\s\S]*DECLINE[\s\S]*CANCEL/,
+    );
+    expect(readBlock(schema, "enum", "AuditEntityType")).toMatch(
+      /CONTRACT[\s\S]*LINE_ITEM[\s\S]*UPLOAD[\s\S]*TRADEBOOK_IMPORT[\s\S]*ORGANISATION_USER[\s\S]*INVITATION/,
     );
   });
 
@@ -101,22 +104,45 @@ describe("contract domain Prisma schema", () => {
     expect(lineItem).toMatch(/tradebookImportId\s+String\?/);
   });
 
-  it("records organisation-scoped contract audit events", () => {
+  it("records organisation-scoped audit events with actor snapshots", () => {
     const schema = readFileSync(schemaPath, "utf8");
     const organisation = readBlock(schema, "model", "Organisation");
     const contract = readBlock(schema, "model", "Contract");
-    const event = readBlock(schema, "model", "ContractEvent");
+    const lineItem = readBlock(schema, "model", "LineItem");
+    const event = readBlock(schema, "model", "AuditEvent");
 
-    expect(organisation).toMatch(/contractEvents\s+ContractEvent\[\]/);
-    expect(contract).toMatch(/events\s+ContractEvent\[\]/);
-    expect(event).toMatch(/actorClerkUserId\s+String\?/);
-    expect(event).toMatch(/eventType\s+ContractEventType/);
-    expect(event).toMatch(/payload\s+Json\?/);
-    expect(event).toMatch(
-      /contract\s+Contract\s+@relation\(fields: \[contractId\], references: \[id\], onDelete: Cascade, onUpdate: Cascade\)/,
+    expect(organisation).toMatch(/lineItems\s+LineItem\[\]/);
+    expect(organisation).toMatch(/auditEvents\s+AuditEvent\[\]/);
+    expect(contract).toMatch(/auditEvents\s+AuditEvent\[\]/);
+    expect(lineItem).toMatch(/organisationId\s+String/);
+    expect(lineItem).toMatch(
+      /organisation\s+Organisation\s+@relation\(fields: \[organisationId\], references: \[id\], onDelete: Cascade, onUpdate: Cascade\)/,
     );
-    expect(event).toContain("@@index([contractId, createdAt])");
-    expect(event).toContain("@@index([organisationId, createdAt])");
+    expect(event).toMatch(/actorClerkUserId\s+String\?/);
+    expect(event).toMatch(/actorName\s+String\?/);
+    expect(event).toMatch(/actorEmail\s+String\?/);
+    expect(event).toMatch(/actorRole\s+OrganisationUserRole\?/);
+    expect(event).toMatch(/action\s+AuditAction/);
+    expect(event).toMatch(/entityType\s+AuditEntityType/);
+    expect(event).toMatch(/entityId\s+String/);
+    expect(event).toMatch(/entityLabel\s+String\?/);
+    expect(event).toMatch(/beforeState\s+Json\?/);
+    expect(event).toMatch(/afterState\s+Json\?/);
+    expect(event).toMatch(/changedFields\s+String\[\]/);
+    expect(event).toMatch(/metadata\s+Json\?/);
+    expect(event).toMatch(
+      /contract\s+Contract\?\s+@relation\(fields: \[contractId\], references: \[id\], onDelete: SetNull, onUpdate: Cascade\)/,
+    );
+    expect(event).toMatch(/lineItemId\s+String\?/);
+    expect(event).toMatch(/uploadId\s+String\?/);
+    expect(event).toMatch(/tradebookImportId\s+String\?/);
+    expect(event).toMatch(/organisationUserId\s+String\?/);
+    expect(event).toMatch(/invitationId\s+String\?/);
+    expect(event).toContain("@@index([organisationId, occurredAt])");
+    expect(event).toContain("@@index([organisationId, action, occurredAt])");
+    expect(event).toContain(
+      "@@index([organisationId, entityType, occurredAt])",
+    );
   });
 
   it("includes a deployable migration for the contract domain", () => {
@@ -143,6 +169,33 @@ describe("contract domain Prisma schema", () => {
     );
     expect(migration).toContain(
       'FOREIGN KEY ("contractId") REFERENCES "Contract"("id") ON DELETE CASCADE ON UPDATE CASCADE',
+    );
+  });
+
+  it("migrates contract events into the organisation audit ledger", () => {
+    const migration = readFileSync(
+      path.join(
+        projectRoot,
+        "prisma/migrations/20260715133000_add_organisation_operations/migration.sql",
+      ),
+      "utf8",
+    );
+
+    expect(migration).toContain(
+      'ALTER TABLE "ContractEvent" RENAME TO "AuditEvent"',
+    );
+    expect(migration).toContain(
+      'ALTER TYPE "ContractEventType" RENAME TO "AuditAction"',
+    );
+    expect(migration).toContain(
+      'UPDATE "LineItem" AS line_item SET "organisationId" = contract."organisationId"',
+    );
+    expect(migration).toContain('ALTER COLUMN "organisationId" SET NOT NULL');
+    expect(migration).toContain(
+      'FOREIGN KEY ("organisationId") REFERENCES "Organisation"("id") ON DELETE CASCADE ON UPDATE CASCADE',
+    );
+    expect(migration).toContain(
+      'FOREIGN KEY ("contractId") REFERENCES "Contract"("id") ON DELETE SET NULL ON UPDATE CASCADE',
     );
   });
 });

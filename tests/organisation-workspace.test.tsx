@@ -182,7 +182,7 @@ describe("OrganisationWorkspace", () => {
       data: { code: "UNAUTHORIZED" },
     });
 
-    function FailingWorkspace() {
+    function FailingWorkspace(): React.ReactNode {
       throw error;
     }
 

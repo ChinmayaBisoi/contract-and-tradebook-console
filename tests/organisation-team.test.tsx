@@ -124,6 +124,13 @@ vi.mock("@/trpc/client", () => ({
         queryFilter: () => ({ queryKey: [["invitation", "list"]] }),
       },
     },
+    audit: {
+      list: {
+        queryFilter: (input: unknown) => ({
+          queryKey: [["audit", "list"], { input }],
+        }),
+      },
+    },
   }),
 }));
 
@@ -458,6 +465,9 @@ describe("OrganisationTeam", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [["invitation", "list"]],
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: [["audit", "list"], { input: { organisationId: "org_1" } }],
     });
   });
 

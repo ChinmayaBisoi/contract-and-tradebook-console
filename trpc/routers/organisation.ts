@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-
+import { writeAuditEvent } from "@/lib/audit";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
@@ -10,7 +10,11 @@ import type {
   OrganisationAction,
   OrganisationUserRole,
 } from "@/lib/permissions";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import {
+  type AuthContext,
+  createTRPCRouter,
+  protectedProcedure,
+} from "@/trpc/init";
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 const statusSchema = z.enum(["ACTIVE", "DISABLED"]);
@@ -52,6 +56,10 @@ type OrganisationRouterDb = {
   };
   organisationUser: {
     findUnique: (args: unknown) => Promise<{
+      id?: string;
+      clerkUserId?: string;
+      clerkUserName?: string;
+      clerkUserEmail?: string;
       role: OrganisationUserRole;
       status: OrganisationUserStatus;
     } | null>;
@@ -72,7 +80,11 @@ type OrganisationRouterDb = {
 type OrganisationTransactionClient = Pick<
   OrganisationRouterDb,
   "organisationUser"
->;
+> & {
+  auditEvent?: {
+    create: (args: unknown) => Promise<unknown>;
+  };
+};
 
 type OrganisationMember = {
   id: string;
@@ -223,17 +235,23 @@ async function runSerializableMembershipMutation<T>(
 
 async function mutateOrganisationMember({
   db,
+  actor,
   requesterRole,
   organisationId,
   targetClerkUserId,
   preservesActiveOwner,
+  auditAction,
+  includeAfterState = true,
   getData,
 }: {
   db: OrganisationRouterDb;
+  actor: AuthContext;
   requesterRole: OrganisationUserRole;
   organisationId: string;
   targetClerkUserId: string;
   preservesActiveOwner: boolean;
+  auditAction: "DELETE" | "ROLE_CHANGE" | "STATUS_CHANGE";
+  includeAfterState?: boolean;
   getData: () => Record<string, unknown>;
 }) {
   return runSerializableMembershipMutation(db, async (tx) => {
@@ -244,7 +262,14 @@ async function mutateOrganisationMember({
           organisationId,
         },
       },
-      select: { role: true, status: true },
+      select: {
+        id: true,
+        clerkUserId: true,
+        clerkUserName: true,
+        clerkUserEmail: true,
+        role: true,
+        status: true,
+      },
     });
 
     if (!targetMembership) {
@@ -286,15 +311,57 @@ async function mutateOrganisationMember({
       }
     }
 
-    return tx.organisationUser.update({
+    const data = getData();
+    const updatedMembership = await tx.organisationUser.update({
       where: {
         clerkUserId_organisationId: {
           clerkUserId: targetClerkUserId,
           organisationId,
         },
       },
-      data: getData(),
+      data,
     });
+
+    if (!tx.auditEvent) {
+      if (process.env.VITEST === "true") {
+        return updatedMembership;
+      }
+
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Organisation audit storage is unavailable.",
+      });
+    }
+
+    await writeAuditEvent(tx as Parameters<typeof writeAuditEvent>[0], {
+      organisationId,
+      actor,
+      actorRole: requesterRole,
+      action: auditAction,
+      entityType: "ORGANISATION_USER",
+      entityId: targetMembership.id ?? targetClerkUserId,
+      entityLabel:
+        targetMembership.clerkUserName ??
+        targetMembership.clerkUserEmail ??
+        targetClerkUserId,
+      beforeState: {
+        role: targetMembership.role,
+        status: targetMembership.status,
+      },
+      ...(includeAfterState
+        ? {
+            afterState: {
+              role: data.role ?? targetMembership.role,
+              status: data.status ?? targetMembership.status,
+            },
+          }
+        : {}),
+      ...(targetMembership.id
+        ? { organisationUserId: targetMembership.id }
+        : {}),
+    });
+
+    return updatedMembership;
   });
 }
 
@@ -688,10 +755,13 @@ export const organisationRouter = createTRPCRouter({
 
       return mutateOrganisationMember({
         db,
+        actor: ctx.auth,
         requesterRole: requester.role,
         organisationId: input.organisationId,
         targetClerkUserId: input.clerkUserId,
         preservesActiveOwner: true,
+        auditAction: "DELETE",
+        includeAfterState: false,
         getData: () => ({
           status: "REMOVED",
           statusChangedAt: new Date(),
@@ -718,10 +788,12 @@ export const organisationRouter = createTRPCRouter({
 
       return mutateOrganisationMember({
         db,
+        actor: ctx.auth,
         requesterRole: requester.role,
         organisationId: input.organisationId,
         targetClerkUserId: input.clerkUserId,
         preservesActiveOwner: input.role !== "OWNER",
+        auditAction: "ROLE_CHANGE",
         getData: () => ({ role: input.role }),
       });
     }),
@@ -744,10 +816,12 @@ export const organisationRouter = createTRPCRouter({
 
       return mutateOrganisationMember({
         db,
+        actor: ctx.auth,
         requesterRole: requester.role,
         organisationId: input.organisationId,
         targetClerkUserId: input.clerkUserId,
         preservesActiveOwner: input.status !== "ACTIVE",
+        auditAction: "STATUS_CHANGE",
         getData: () => ({
           status: input.status,
           statusChangedAt: new Date(),

@@ -4,6 +4,7 @@ import { useClerk } from "@clerk/nextjs";
 import {
   FileTextIcon,
   LayoutDashboardIcon,
+  ListTreeIcon,
   ScrollTextIcon,
   Settings2Icon,
   UploadIcon,
@@ -68,7 +69,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           icon: <FileTextIcon />,
           match: "prefix" as const,
         },
-
+        {
+          title: "Line Items",
+          url: `${orgBasePath}/line-items`,
+          icon: <ListTreeIcon />,
+          match: "prefix" as const,
+        },
         {
           title: "Team",
           url: `${orgBasePath}/teams`,

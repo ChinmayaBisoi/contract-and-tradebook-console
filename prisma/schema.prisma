@@ -16,7 +16,8 @@ model Organisation {
   uploads          Upload[]
   tradebookImports TradebookImport[]
   contracts        Contract[]
-  contractEvents   ContractEvent[]
+  lineItems        LineItem[]
+  auditEvents      AuditEvent[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -47,6 +48,7 @@ model OrganisationUser {
   statusChangedAt DateTime               @default(now())
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
+  auditEvents     AuditEvent[]
 
   @@unique([clerkUserId, organisationId])
   @@index([organisationId])
@@ -78,6 +80,7 @@ model Invitation {
   expiresAt          DateTime
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+  auditEvents        AuditEvent[]
 
   @@index([email, status, createdAt])
   @@index([organisationId, status, createdAt])
@@ -109,12 +112,26 @@ enum ContractStatus {
   ARCHIVED
 }
 
-enum ContractEventType {
+enum AuditAction {
   CREATE
   UPDATE
   STATUS_CHANGE
   DELETE
   IMPORT
+  ROLE_CHANGE
+  INVITE
+  ACCEPT
+  DECLINE
+  CANCEL
+}
+
+enum AuditEntityType {
+  CONTRACT
+  LINE_ITEM
+  UPLOAD
+  TRADEBOOK_IMPORT
+  ORGANISATION_USER
+  INVITATION
 }
 
 model Upload {
@@ -135,6 +152,7 @@ model Upload {
   tradebookImport       TradebookImport?
   contracts             Contract[]
   lineItems             LineItem[]
+  auditEvents           AuditEvent[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status, createdAt])
@@ -159,6 +177,7 @@ model TradebookImport {
   updatedAt             DateTime              @updatedAt
   contracts             Contract[]
   lineItems             LineItem[]
+  auditEvents           AuditEvent[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status, createdAt])
@@ -186,7 +205,7 @@ model Contract {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
   lineItems            LineItem[]
-  events               ContractEvent[]
+  auditEvents          AuditEvent[]
 
   @@unique([organisationId, poRefNo])
   @@index([organisationId, status, createdAt])
@@ -197,6 +216,8 @@ model Contract {
 
 model LineItem {
   id                String           @id @default(cuid())
+  organisationId    String
+  organisation      Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   contractId        String
   contract          Contract         @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   uploadId          String?
@@ -214,23 +235,53 @@ model LineItem {
   sortOrder         Int              @default(0)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+  auditEvents       AuditEvent[]
 
+  @@index([organisationId, updatedAt])
+  @@index([organisationId, description])
   @@index([contractId, sortOrder])
   @@index([uploadId])
   @@index([tradebookImportId])
 }
 
-model ContractEvent {
-  id               String            @id @default(cuid())
-  contractId       String
-  contract         Contract          @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  organisationId   String
-  organisation     Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  actorClerkUserId String?
-  eventType        ContractEventType
-  payload          Json?
-  createdAt        DateTime          @default(now())
+model AuditEvent {
+  id                 String                @id @default(cuid())
+  organisationId     String
+  organisation       Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  actorClerkUserId   String?
+  actorName          String?
+  actorEmail         String?
+  actorRole          OrganisationUserRole?
+  action             AuditAction
+  entityType         AuditEntityType
+  entityId           String
+  entityLabel        String?
+  beforeState        Json?
+  afterState         Json?
+  changedFields      String[]
+  metadata           Json?
+  contractId         String?
+  contract           Contract?             @relation(fields: [contractId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  lineItemId         String?
+  lineItem           LineItem?             @relation(fields: [lineItemId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  uploadId           String?
+  upload             Upload?               @relation(fields: [uploadId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  tradebookImportId  String?
+  tradebookImport    TradebookImport?      @relation(fields: [tradebookImportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  organisationUserId String?
+  organisationUser   OrganisationUser?     @relation(fields: [organisationUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  invitationId       String?
+  invitation         Invitation?           @relation(fields: [invitationId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  occurredAt         DateTime              @default(now())
 
-  @@index([contractId, createdAt])
-  @@index([organisationId, createdAt])
+  @@index([organisationId, occurredAt])
+  @@index([organisationId, action, occurredAt])
+  @@index([organisationId, entityType, occurredAt])
+  @@index([actorClerkUserId, occurredAt])
+  @@index([contractId, occurredAt])
+  @@index([lineItemId, occurredAt])
+  @@index([uploadId, occurredAt])
+  @@index([tradebookImportId, occurredAt])
+  @@index([organisationUserId, occurredAt])
+  @@index([invitationId, occurredAt])
 }

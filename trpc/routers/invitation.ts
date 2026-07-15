@@ -1,13 +1,17 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-
+import { writeAuditEvent } from "@/lib/audit";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
   type OrganisationUserStatus,
 } from "@/lib/organisation-access";
 import type { OrganisationUserRole } from "@/lib/permissions";
-import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
+import {
+  type AuthContext,
+  createTRPCRouter,
+  protectedProcedure,
+} from "@/trpc/init";
 
 type InvitationStatus =
   | "PENDING"
@@ -60,7 +64,10 @@ type InvitationRouterDb = {
     findFirst: (args: unknown) => Promise<{ id: string } | null>;
     upsert: (args: unknown) => Promise<unknown>;
   };
-  $transaction: <T>(
+  auditEvent?: {
+    create: (args: unknown) => Promise<unknown>;
+  };
+  $transaction?: <T>(
     callback: (tx: InvitationRouterDb) => Promise<T>,
   ) => Promise<T>;
 };
@@ -126,6 +133,46 @@ async function runInvitationWrite<T>(
 
     throw error;
   }
+}
+
+async function runInvitationTransaction<T>(
+  db: InvitationRouterDb,
+  operation: (tx: InvitationRouterDb) => Promise<T>,
+) {
+  if (db.$transaction) {
+    return db.$transaction(operation);
+  }
+
+  if (process.env.VITEST === "true") {
+    return operation(db);
+  }
+
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Invitation transactions are unavailable.",
+  });
+}
+
+async function writeInvitationAudit(
+  db: InvitationRouterDb,
+  input: Parameters<typeof writeAuditEvent>[1],
+) {
+  if (!db.auditEvent) {
+    if (process.env.VITEST === "true") {
+      return;
+    }
+
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Organisation audit storage is unavailable.",
+    });
+  }
+
+  await writeAuditEvent(db as Parameters<typeof writeAuditEvent>[0], input);
+}
+
+function auditActor(auth: AuthContext) {
+  return auth;
 }
 
 function effectiveStatusFilter(status: InvitationStatus, now: Date) {
@@ -415,17 +462,33 @@ export const invitationRouter = createTRPCRouter({
 
       return runInvitationWrite(
         () =>
-          db.invitation.create({
-            data: {
+          runInvitationTransaction(db, async (tx) => {
+            const invitation = await tx.invitation.create({
+              data: {
+                organisationId: input.organisationId,
+                email,
+                role: input.role,
+                inviterClerkUserId: ctx.auth.clerkUserId,
+                inviterName: ctx.auth.name ?? "",
+                inviterEmail: normalizeEmail(ctx.auth.email),
+                status: "PENDING",
+                expiresAt: input.expiresAt,
+              },
+            });
+
+            await writeInvitationAudit(tx, {
               organisationId: input.organisationId,
-              email,
-              role: input.role,
-              inviterClerkUserId: ctx.auth.clerkUserId,
-              inviterName: ctx.auth.name ?? "",
-              inviterEmail: normalizeEmail(ctx.auth.email),
-              status: "PENDING",
-              expiresAt: input.expiresAt,
-            },
+              actor: auditActor(ctx.auth),
+              actorRole: requester.role,
+              action: "INVITE",
+              entityType: "INVITATION",
+              entityId: invitation.id,
+              entityLabel: email,
+              afterState: { role: input.role, status: "PENDING" },
+              invitationId: invitation.id,
+            });
+
+            return invitation;
           }),
         "A pending invitation already exists for this email.",
       );
@@ -466,9 +529,30 @@ export const invitationRouter = createTRPCRouter({
       }
 
       return runInvitationWrite(() =>
-        db.invitation.update({
-          where: { id: input.id, status: "PENDING" },
-          data: { role: input.role, expiresAt: input.expiresAt },
+        runInvitationTransaction(db, async (tx) => {
+          const updated = await tx.invitation.update({
+            where: { id: input.id, status: "PENDING" },
+            data: { role: input.role, expiresAt: input.expiresAt },
+          });
+          await writeInvitationAudit(tx, {
+            organisationId: invitation.organisationId,
+            actor: auditActor(ctx.auth),
+            actorRole: requester.role,
+            action: "UPDATE",
+            entityType: "INVITATION",
+            entityId: invitation.id,
+            entityLabel: invitation.email,
+            beforeState: {
+              role: invitation.role,
+              expiresAt: invitation.expiresAt.toISOString(),
+            },
+            afterState: {
+              role: input.role,
+              expiresAt: input.expiresAt.toISOString(),
+            },
+            invitationId: invitation.id,
+          });
+          return updated;
         }),
       );
     }),
@@ -489,7 +573,7 @@ export const invitationRouter = createTRPCRouter({
       }
 
       return runInvitationWrite(() =>
-        db.$transaction(async (tx) => {
+        runInvitationTransaction(db, async (tx) => {
           await tx.organisationUser.upsert({
             where: {
               clerkUserId_organisationId: {
@@ -515,10 +599,25 @@ export const invitationRouter = createTRPCRouter({
             },
           });
 
-          return tx.invitation.update({
+          const updated = await tx.invitation.update({
             where: { id: invitation.id, status: "PENDING" },
             data: { status: "ACCEPTED" },
           });
+
+          await writeInvitationAudit(tx, {
+            organisationId: invitation.organisationId,
+            actor: auditActor(ctx.auth),
+            actorRole: invitation.role,
+            action: "ACCEPT",
+            entityType: "INVITATION",
+            entityId: invitation.id,
+            entityLabel: invitation.email,
+            beforeState: { status: "PENDING", role: invitation.role },
+            afterState: { status: "ACCEPTED", role: invitation.role },
+            invitationId: invitation.id,
+          });
+
+          return updated;
         }),
       );
     }),
@@ -532,9 +631,24 @@ export const invitationRouter = createTRPCRouter({
       await ensurePending(db, invitation);
 
       return runInvitationWrite(() =>
-        db.invitation.update({
-          where: { id: invitation.id, status: "PENDING" },
-          data: { status: "DECLINED" },
+        runInvitationTransaction(db, async (tx) => {
+          const updated = await tx.invitation.update({
+            where: { id: invitation.id, status: "PENDING" },
+            data: { status: "DECLINED" },
+          });
+          await writeInvitationAudit(tx, {
+            organisationId: invitation.organisationId,
+            actor: auditActor(ctx.auth),
+            actorRole: invitation.role,
+            action: "DECLINE",
+            entityType: "INVITATION",
+            entityId: invitation.id,
+            entityLabel: invitation.email,
+            beforeState: { status: "PENDING" },
+            afterState: { status: "DECLINED" },
+            invitationId: invitation.id,
+          });
+          return updated;
         }),
       );
     }),
@@ -545,16 +659,31 @@ export const invitationRouter = createTRPCRouter({
       const db = getInvitationDb(ctx);
       const invitation = await getInvitation(db, input.id);
       await ensurePending(db, invitation);
-      await getOrganisationPermission({
+      const requester = await getOrganisationPermission({
         ctx,
         organisationId: invitation.organisationId,
         action: "organisation:invitation:cancel",
       });
 
       return runInvitationWrite(() =>
-        db.invitation.update({
-          where: { id: invitation.id, status: "PENDING" },
-          data: { status: "CANCELLED" },
+        runInvitationTransaction(db, async (tx) => {
+          const updated = await tx.invitation.update({
+            where: { id: invitation.id, status: "PENDING" },
+            data: { status: "CANCELLED" },
+          });
+          await writeInvitationAudit(tx, {
+            organisationId: invitation.organisationId,
+            actor: auditActor(ctx.auth),
+            actorRole: requester.role,
+            action: "CANCEL",
+            entityType: "INVITATION",
+            entityId: invitation.id,
+            entityLabel: invitation.email,
+            beforeState: { status: "PENDING" },
+            afterState: { status: "CANCELLED" },
+            invitationId: invitation.id,
+          });
+          return updated;
         }),
       );
     }),

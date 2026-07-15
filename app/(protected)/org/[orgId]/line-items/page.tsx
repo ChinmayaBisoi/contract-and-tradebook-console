@@ -1,10 +1,10 @@
 import { createLoader } from "nuqs/server";
 import { Suspense } from "react";
 
-import { OrganisationAuditTrail } from "@/components/operations/audit-trail";
+import { OrganisationLineItems } from "@/components/operations/line-items";
 import {
-  auditSearchParams,
-  getAuditListInput,
+  getLineItemListInput,
+  lineItemSearchParams,
 } from "@/components/operations/search-params";
 import {
   OperationsErrorBoundary,
@@ -12,9 +12,9 @@ import {
 } from "@/components/operations/table-states";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
-const loadAuditSearchParams = createLoader(auditSearchParams);
+const loadLineItemSearchParams = createLoader(lineItemSearchParams);
 
-export default async function OrganisationAuditTrailPage({
+export default async function OrganisationLineItemsPage({
   params,
   searchParams,
 }: {
@@ -23,21 +23,23 @@ export default async function OrganisationAuditTrailPage({
 }) {
   const [{ orgId }, queryState] = await Promise.all([
     params,
-    loadAuditSearchParams(searchParams),
+    loadLineItemSearchParams(searchParams),
   ]);
   const queryClient = getQueryClient();
 
   void queryClient.prefetchQuery(
-    trpc.audit.list.queryOptions(getAuditListInput(orgId, queryState)),
+    trpc.lineItem.list.queryOptions(
+      getLineItemListInput(orgId, undefined, queryState),
+    ),
   );
 
   return (
     <HydrateClient>
       <OperationsErrorBoundary>
         <Suspense
-          fallback={<OperationsTableSkeleton title="Loading audit events" />}
+          fallback={<OperationsTableSkeleton title="Loading line items" />}
         >
-          <OrganisationAuditTrail organisationId={orgId} />
+          <OrganisationLineItems organisationId={orgId} />
         </Suspense>
       </OperationsErrorBoundary>
     </HydrateClient>
