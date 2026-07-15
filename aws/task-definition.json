@@ -13,9 +13,10 @@
       "essential": true,
       "portMappings": [
         {
-          "containerPort": 3000,
-          "hostPort": 3000,
-          "protocol": "tcp"
+          "containerPort": 80,
+          "hostPort": 80,
+          "protocol": "tcp",
+          "name": "main-80-tcp"
         }
       ],
       "environment": [
@@ -25,7 +26,7 @@
         },
         {
           "name": "PORT",
-          "value": "3000"
+          "value": "80"
         },
         {
           "name": "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",

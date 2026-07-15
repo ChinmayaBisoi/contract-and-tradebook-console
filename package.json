@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bunx nx run contractview:next:dev",
-    "build": "bunx nx run contractview:next:build",
-    "start": "bunx nx run contractview:next:start",
-    "test": "bunx nx run contractview:vitest:test -- --run",
-    "test:watch": "bunx nx run contractview:vitest:test",
+    "dev": "node ./node_modules/next/dist/bin/next dev",
+    "build": "node ./node_modules/next/dist/bin/next build",
+    "start": "node ./node_modules/next/dist/bin/next start",
+    "test": "node ./node_modules/vitest/vitest.mjs --run",
+    "test:watch": "node ./node_modules/vitest/vitest.mjs",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lint:ci": "biome ci .",
@@ -70,9 +70,6 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
-    "@nx/docker": "23.1.0",
-    "@nx/next": "23.1.0",
-    "@nx/vitest": "23.1.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -83,7 +80,6 @@
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
     "jsdom": "^29.1.1",
-    "nx": "23.1.0",
     "prisma": "^7.8.0",
     "tailwindcss": "^4",
     "typescript": "^5",
@@ -97,6 +93,5 @@
   "trustedDependencies": [
     "sharp",
     "unrs-resolver"
-  ],
-  "nx": {}
+  ]
 }
