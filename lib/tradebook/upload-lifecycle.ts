@@ -105,6 +105,7 @@ export async function completeTradebookUpload(
     await tx.tradebookImport.upsert({
       where: { uploadId: input.uploadId },
       create: {
+        id: input.uploadId,
         organisationId: input.organisationId,
         uploadId: input.uploadId,
         status: "PENDING",

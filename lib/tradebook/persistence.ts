@@ -33,6 +33,16 @@ FROM jsonb_to_recordset($1::jsonb) AS row(
   "createdAt" text, "updatedAt" text
 )`;
 
+const lockMappedImport = `
+SELECT 1 / CASE WHEN locked."id" IS NOT NULL THEN 1 ELSE 0 END AS guard
+FROM (VALUES (1)) AS seed(value)
+LEFT JOIN LATERAL (
+  SELECT "id"
+  FROM "TradebookImport"
+  WHERE "id" = $1 AND "organisationId" = $2 AND "status" = 'MAPPED'
+  FOR UPDATE
+) AS locked ON TRUE`;
+
 const insertLineItems = `
 INSERT INTO "LineItem" (
   "id", "organisationId", "contractId", "uploadId", "tradebookImportId",
@@ -238,6 +248,7 @@ export async function persistReviewedDraft({
   ];
 
   const queries: SqlQuery[] = [
+    { text: lockMappedImport, values: [importId, organisationId] },
     { text: insertContracts, values: [JSON.stringify(contracts)] },
     { text: insertLineItems, values: [JSON.stringify(lineItems)] },
     { text: insertAudits, values: [JSON.stringify(audits)] },

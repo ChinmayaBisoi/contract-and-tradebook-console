@@ -53,9 +53,14 @@ describe("atomic reviewed import persistence", () => {
 
     expect(executeTransaction).toHaveBeenCalledTimes(1);
     const queries = executeTransaction.mock.calls[0]?.[0];
-    const contracts = JSON.parse(String(queries[0].values[0]));
-    const lineItems = JSON.parse(String(queries[1].values[0]));
-    const audits = JSON.parse(String(queries[2].values[0]));
+    expect(queries[0]).toEqual({
+      text: expect.stringContaining('FOR UPDATE'),
+      values: ["import_1", "app_org_1"],
+    });
+    expect(queries[0].text).toContain("1 / CASE");
+    const contracts = JSON.parse(String(queries[1].values[0]));
+    const lineItems = JSON.parse(String(queries[2].values[0]));
+    const audits = JSON.parse(String(queries[3].values[0]));
 
     expect(contracts).toHaveLength(14);
     expect(lineItems).toHaveLength(1153);
@@ -92,7 +97,7 @@ describe("atomic reviewed import persistence", () => {
         entityId: "import_1",
       }),
     );
-    expect(queries[0].text).not.toContain("ON CONFLICT");
+    expect(queries[1].text).not.toContain("ON CONFLICT");
   });
 
   it("refuses to persist a draft with blocking validation errors", async () => {
