@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 import { baseProcedure, createTRPCRouter } from "@/trpc/init";
+import { contractRouter } from "@/trpc/routers/contract";
 import { invitationRouter } from "@/trpc/routers/invitation";
 import { organisationRouter } from "@/trpc/routers/organisation";
 
 export const appRouter = createTRPCRouter({
   organisation: organisationRouter,
   invitation: invitationRouter,
+  contract: contractRouter,
   hello: baseProcedure
     .input(
       z.object({
