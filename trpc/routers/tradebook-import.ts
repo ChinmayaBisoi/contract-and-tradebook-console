@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { writeAuditEvent } from "@/lib/audit";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
@@ -105,6 +106,9 @@ type TradebookImportDb = {
     create: (args: unknown) => Promise<{ id: string }>;
     updateMany: (args: unknown) => Promise<{ count: number }>;
   };
+  auditEvent?: {
+    create: (args: unknown) => Promise<unknown>;
+  };
   tradebookImport: {
     findFirst: (args: unknown) => Promise<ImportRecord | null>;
     findMany: (args: unknown) => Promise<ImportRecord[]>;
@@ -115,7 +119,37 @@ type TradebookImportDb = {
   contract: {
     findMany: (args: unknown) => Promise<Array<{ poRefNo: string }>>;
   };
+  $transaction?: <T>(
+    callback: (tx: TradebookImportDb) => Promise<T>,
+  ) => Promise<T>;
 };
+
+async function writeUploadAudit(
+  db: TradebookImportDb,
+  input: Parameters<typeof writeAuditEvent>[1],
+) {
+  if (!db.auditEvent) {
+    if (process.env.VITEST === "true") {
+      return;
+    }
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Organisation audit storage is unavailable.",
+    });
+  }
+
+  await writeAuditEvent(db as Parameters<typeof writeAuditEvent>[0], input);
+}
+
+async function runTradebookTransaction<T>(
+  db: TradebookImportDb,
+  callback: (tx: TradebookImportDb) => Promise<T>,
+) {
+  if (!db.$transaction) {
+    return callback(db);
+  }
+  return db.$transaction(callback);
+}
 
 async function requireImportPermission(
   db: TradebookImportDb,
@@ -202,7 +236,7 @@ export const tradebookImportRouter = createTRPCRouter({
     .input(createUploadInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as TradebookImportDb;
-      await requireImportPermission(
+      const membership = await requireImportPermission(
         db,
         ctx.auth.clerkUserId,
         input.organisationId,
@@ -222,6 +256,22 @@ export const tradebookImportRouter = createTRPCRouter({
         select: { id: true },
       });
 
+      await writeUploadAudit(db, {
+        organisationId: input.organisationId,
+        actor: ctx.auth,
+        actorRole: membership.role,
+        action: "CREATE",
+        entityType: "UPLOAD",
+        entityId: upload.id,
+        entityLabel: input.fileName,
+        uploadId: upload.id,
+        afterState: {
+          status: "PENDING",
+          fileName: input.fileName,
+          fileSizeBytes: input.fileSizeBytes,
+        },
+      });
+
       publishRealtimeEvent({
         entity: "upload",
         action: "created",
@@ -238,33 +288,50 @@ export const tradebookImportRouter = createTRPCRouter({
     .input(markUploadFailedInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as TradebookImportDb;
-      await requireImportPermission(
+      const membership = await requireImportPermission(
         db,
         ctx.auth.clerkUserId,
         input.organisationId,
         "import:create",
       );
 
-      const result = await db.upload.updateMany({
-        where: {
-          id: input.uploadId,
-          organisationId: input.organisationId,
-          uploadedByClerkUserId: ctx.auth.clerkUserId,
-          status: { in: ["PENDING", "UPLOADED"] },
-        },
-        data: {
-          status: "FAILED",
-          failedAt: new Date(),
-          failureMessage: input.message,
-        },
-      });
-
-      if (result.count !== 1) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Upload was not found in this organisation.",
+      await runTradebookTransaction(db, async (tx) => {
+        const result = await tx.upload.updateMany({
+          where: {
+            id: input.uploadId,
+            organisationId: input.organisationId,
+            uploadedByClerkUserId: ctx.auth.clerkUserId,
+            status: { in: ["PENDING", "UPLOADED"] },
+          },
+          data: {
+            status: "FAILED",
+            failedAt: new Date(),
+            failureMessage: input.message,
+          },
         });
-      }
+
+        if (result.count !== 1) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Upload was not found in this organisation.",
+          });
+        }
+
+        await writeUploadAudit(tx, {
+          organisationId: input.organisationId,
+          actor: ctx.auth,
+          actorRole: membership.role,
+          action: "STATUS_CHANGE",
+          entityType: "UPLOAD",
+          entityId: input.uploadId,
+          entityLabel: input.uploadId,
+          uploadId: input.uploadId,
+          afterState: {
+            status: "FAILED",
+            failureMessage: input.message,
+          },
+        });
+      });
 
       publishRealtimeEvent({
         entity: "upload",
@@ -282,7 +349,7 @@ export const tradebookImportRouter = createTRPCRouter({
     .input(importInput)
     .mutation(async ({ ctx, input }) => {
       const db = ctx.db as unknown as TradebookImportDb;
-      await requireImportPermission(
+      const membership = await requireImportPermission(
         db,
         ctx.auth.clerkUserId,
         input.organisationId,
@@ -296,24 +363,39 @@ export const tradebookImportRouter = createTRPCRouter({
         });
       }
 
-      const claimed = await db.upload.updateMany({
-        where: {
-          id: record.uploadId,
-          organisationId: input.organisationId,
-          status: "UPLOADED",
-        },
-        data: {
-          status: "PROCESSING",
-          processingStartedAt: new Date(),
-          failureMessage: null,
-        },
-      });
-      if (claimed.count !== 1) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "This workbook is already being prepared.",
+      await runTradebookTransaction(db, async (tx) => {
+        const claimed = await tx.upload.updateMany({
+          where: {
+            id: record.uploadId,
+            organisationId: input.organisationId,
+            status: "UPLOADED",
+          },
+          data: {
+            status: "PROCESSING",
+            processingStartedAt: new Date(),
+            failureMessage: null,
+          },
         });
-      }
+        if (claimed.count !== 1) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "This workbook is already being prepared.",
+          });
+        }
+
+        await writeUploadAudit(tx, {
+          organisationId: input.organisationId,
+          actor: ctx.auth,
+          actorRole: membership.role,
+          action: "STATUS_CHANGE",
+          entityType: "UPLOAD",
+          entityId: record.uploadId,
+          entityLabel: record.upload.fileName ?? record.uploadId,
+          uploadId: record.uploadId,
+          beforeState: { status: "UPLOADED" },
+          afterState: { status: "PROCESSING" },
+        });
+      });
 
       publishRealtimeEvent({
         entity: "upload",
@@ -340,24 +422,38 @@ export const tradebookImportRouter = createTRPCRouter({
         const mapping = analyzeWorkbookMapping(parsed.workbookSnapshot);
         const preparedAt = new Date();
 
-        await db.tradebookImport.update({
-          where: { id: record.id },
-          data: {
-            sheetNames: parsed.workbookSnapshot.sheets.map(
-              (sheet) => sheet.name,
-            ),
-            workbookSnapshot: parsed.workbookSnapshot,
-            formulaSnapshot: parsed.formulaSnapshot,
-            mappingConfig: mapping,
-            validationErrors: [],
-            preparedAt,
-            failedAt: null,
-            failureMessage: null,
-          },
-        });
-        await db.upload.updateMany({
-          where: { id: record.uploadId, organisationId: input.organisationId },
-          data: { status: "PROCESSED", processedAt: preparedAt },
+        await runTradebookTransaction(db, async (tx) => {
+          await tx.tradebookImport.update({
+            where: { id: record.id },
+            data: {
+              sheetNames: parsed.workbookSnapshot.sheets.map(
+                (sheet) => sheet.name,
+              ),
+              workbookSnapshot: parsed.workbookSnapshot,
+              formulaSnapshot: parsed.formulaSnapshot,
+              mappingConfig: mapping,
+              validationErrors: [],
+              preparedAt,
+              failedAt: null,
+              failureMessage: null,
+            },
+          });
+          await tx.upload.updateMany({
+            where: { id: record.uploadId, organisationId: input.organisationId },
+            data: { status: "PROCESSED", processedAt: preparedAt },
+          });
+          await writeUploadAudit(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "STATUS_CHANGE",
+            entityType: "UPLOAD",
+            entityId: record.uploadId,
+            entityLabel: record.upload.fileName ?? record.uploadId,
+            uploadId: record.uploadId,
+            beforeState: { status: "PROCESSING" },
+            afterState: { status: "PROCESSED" },
+          });
         });
         publishRealtimeEvent({
           entity: "upload",
@@ -381,27 +477,42 @@ export const tradebookImportRouter = createTRPCRouter({
           error instanceof Error
             ? error.message
             : "Workbook preparation failed.";
-        await Promise.all([
-          db.tradebookImport.updateMany({
-            where: { id: record.id, organisationId: input.organisationId },
-            data: {
-              status: "FAILED",
-              failedAt: new Date(),
-              failureMessage: message,
-            },
-          }),
-          db.upload.updateMany({
-            where: {
-              id: record.uploadId,
-              organisationId: input.organisationId,
-            },
-            data: {
-              status: "FAILED",
-              failedAt: new Date(),
-              failureMessage: message,
-            },
-          }),
-        ]);
+        await runTradebookTransaction(db, async (tx) => {
+          await Promise.all([
+            tx.tradebookImport.updateMany({
+              where: { id: record.id, organisationId: input.organisationId },
+              data: {
+                status: "FAILED",
+                failedAt: new Date(),
+                failureMessage: message,
+              },
+            }),
+            tx.upload.updateMany({
+              where: {
+                id: record.uploadId,
+                organisationId: input.organisationId,
+              },
+              data: {
+                status: "FAILED",
+                failedAt: new Date(),
+                failureMessage: message,
+              },
+            }),
+          ]);
+
+          await writeUploadAudit(tx, {
+            organisationId: input.organisationId,
+            actor: ctx.auth,
+            actorRole: membership.role,
+            action: "STATUS_CHANGE",
+            entityType: "UPLOAD",
+            entityId: record.uploadId,
+            entityLabel: record.upload.fileName ?? record.uploadId,
+            uploadId: record.uploadId,
+            beforeState: { status: "PROCESSING" },
+            afterState: { status: "FAILED", failureMessage: message },
+          });
+        });
         publishRealtimeEvent({
           entity: "upload",
           action: "updated",

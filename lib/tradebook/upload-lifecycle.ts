@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 
+import { writeAuditEvent } from "@/lib/audit";
 import {
   checkOrgPermission,
   createOrganisationMembershipFinder,
@@ -11,6 +12,7 @@ export type TradebookUploadMetadata = {
   organisationId: string;
   uploadId: string;
   clerkUserId: string;
+  actorRole?: "OWNER" | "ADMIN" | "MEMBER";
 };
 
 type AuthorizeUploadDb = {
@@ -29,6 +31,9 @@ type CompleteUploadTransaction = {
   tradebookImport: {
     upsert: (args: unknown) => Promise<{ id: string }>;
   };
+  auditEvent?: {
+    create: (args: unknown) => Promise<unknown>;
+  };
 };
 
 type CompleteUploadDb = CompleteUploadTransaction & {
@@ -42,7 +47,7 @@ export async function authorizeTradebookUpload(
   metadata: TradebookUploadMetadata,
 ) {
   const db = dbValue as AuthorizeUploadDb;
-  await checkOrgPermission({
+  const membership = await checkOrgPermission({
     clerkUserId: metadata.clerkUserId,
     organisationId: metadata.organisationId,
     action: "import:create",
@@ -67,7 +72,7 @@ export async function authorizeTradebookUpload(
     });
   }
 
-  return metadata;
+  return { ...metadata, actorRole: membership.role };
 }
 
 export async function completeTradebookUpload(
@@ -115,6 +120,32 @@ export async function completeTradebookUpload(
       update: {},
       select: { id: true },
     });
+
+    if (!tx.auditEvent) {
+      if (process.env.VITEST !== "true") {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Organisation audit storage is unavailable.",
+        });
+      }
+    } else {
+      await writeAuditEvent(tx as Parameters<typeof writeAuditEvent>[0], {
+        organisationId: input.organisationId,
+        actor: {
+          clerkUserId: input.clerkUserId,
+          email: "",
+          name: null,
+        },
+        actorRole: input.actorRole ?? "MEMBER",
+        action: "STATUS_CHANGE",
+        entityType: "UPLOAD",
+        entityId: input.uploadId,
+        entityLabel: input.uploadId,
+        uploadId: input.uploadId,
+        beforeState: { status: "PENDING" },
+        afterState: { status: "UPLOADED" },
+      });
+    }
 
     publishRealtimeEvent({
       entity: "upload",

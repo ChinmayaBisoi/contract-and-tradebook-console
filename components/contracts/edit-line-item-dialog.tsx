@@ -30,6 +30,24 @@ type EditableLineItem = {
   pricingUnit: string | null;
 };
 
+type LineItemFormValues = {
+  description: string;
+  quantity: string;
+  quantityUnit: string;
+  unitPrice: string;
+  pricingUnit: string;
+};
+
+function toLineItemFormValues(lineItem: EditableLineItem): LineItemFormValues {
+  return {
+    description: lineItem.description,
+    quantity: lineItem.quantity,
+    quantityUnit: lineItem.quantityUnit ?? "",
+    unitPrice: lineItem.unitPrice,
+    pricingUnit: lineItem.pricingUnit ?? "",
+  };
+}
+
 export function EditLineItemDialog({
   organisationId,
   contractId,
@@ -45,19 +63,24 @@ export function EditLineItemDialog({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<LineItemFormValues>(() =>
+    toLineItemFormValues(lineItem),
+  );
   const updateLineItem = useMutation(trpc.lineItem.update.mutationOptions());
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      setFormValues(toLineItemFormValues(lineItem));
+      setError(null);
+    }
+  };
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    const form = new FormData(event.currentTarget);
-    const parsed = lineItemInputSchema.safeParse({
-      description: String(form.get("description") ?? ""),
-      quantity: String(form.get("quantity") ?? ""),
-      quantityUnit: String(form.get("quantityUnit") ?? ""),
-      unitPrice: String(form.get("unitPrice") ?? ""),
-      pricingUnit: String(form.get("pricingUnit") ?? ""),
-    });
+
+    const parsed = lineItemInputSchema.safeParse(formValues);
 
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Please check the form values.");
@@ -87,7 +110,7 @@ export function EditLineItemDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger render={<Button variant="ghost" size="sm" disabled={disabled} />}>
         <PencilIcon />
         Edit
@@ -105,72 +128,102 @@ export function EditLineItemDialog({
             className="grid gap-4"
             onSubmit={handleSubmit}
           >
-          <Field>
-            <FieldLabel htmlFor={`edit-line-item-description-${lineItem.id}`}>
-              Description
-            </FieldLabel>
-            <Input
-              id={`edit-line-item-description-${lineItem.id}`}
-              name="description"
-              defaultValue={lineItem.description}
-              required
-              autoFocus
-            />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
             <Field>
-              <FieldLabel htmlFor={`edit-line-item-quantity-${lineItem.id}`}>
-                Quantity
+              <FieldLabel htmlFor={`edit-line-item-description-${lineItem.id}`}>
+                Description
               </FieldLabel>
               <Input
-                id={`edit-line-item-quantity-${lineItem.id}`}
-                name="quantity"
-                inputMode="decimal"
-                defaultValue={lineItem.quantity}
+                id={`edit-line-item-description-${lineItem.id}`}
+                name="description"
+                value={formValues.description}
+                onChange={(event) =>
+                  setFormValues((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
                 required
+                autoFocus
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor={`edit-line-item-quantity-unit-${lineItem.id}`}>
-                Quantity unit
-              </FieldLabel>
-              <Input
-                id={`edit-line-item-quantity-unit-${lineItem.id}`}
-                name="quantityUnit"
-                defaultValue={lineItem.quantityUnit ?? ""}
-              />
-            </Field>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor={`edit-line-item-unit-price-${lineItem.id}`}>
-                Unit price
-              </FieldLabel>
-              <Input
-                id={`edit-line-item-unit-price-${lineItem.id}`}
-                name="unitPrice"
-                inputMode="decimal"
-                defaultValue={lineItem.unitPrice}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor={`edit-line-item-pricing-unit-${lineItem.id}`}>
-                Pricing unit
-              </FieldLabel>
-              <Input
-                id={`edit-line-item-pricing-unit-${lineItem.id}`}
-                name="pricingUnit"
-                defaultValue={lineItem.pricingUnit ?? ""}
-              />
-            </Field>
-          </div>
-          <FieldError>{error}</FieldError>
-          <DialogFooter>
-            <Button type="submit" disabled={updateLineItem.isPending || disabled}>
-              {updateLineItem.isPending ? "Saving..." : "Save changes"}
-            </Button>
-          </DialogFooter>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`edit-line-item-quantity-${lineItem.id}`}>
+                  Quantity
+                </FieldLabel>
+                <Input
+                  id={`edit-line-item-quantity-${lineItem.id}`}
+                  name="quantity"
+                  inputMode="decimal"
+                  value={formValues.quantity}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      quantity: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`edit-line-item-quantity-unit-${lineItem.id}`}>
+                  Quantity unit
+                </FieldLabel>
+                <Input
+                  id={`edit-line-item-quantity-unit-${lineItem.id}`}
+                  name="quantityUnit"
+                  value={formValues.quantityUnit}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      quantityUnit: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor={`edit-line-item-unit-price-${lineItem.id}`}>
+                  Unit price
+                </FieldLabel>
+                <Input
+                  id={`edit-line-item-unit-price-${lineItem.id}`}
+                  name="unitPrice"
+                  inputMode="decimal"
+                  value={formValues.unitPrice}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      unitPrice: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={`edit-line-item-pricing-unit-${lineItem.id}`}>
+                  Pricing unit
+                </FieldLabel>
+                <Input
+                  id={`edit-line-item-pricing-unit-${lineItem.id}`}
+                  name="pricingUnit"
+                  value={formValues.pricingUnit}
+                  onChange={(event) =>
+                    setFormValues((current) => ({
+                      ...current,
+                      pricingUnit: event.target.value,
+                    }))
+                  }
+                />
+              </Field>
+            </div>
+            <FieldError>{error}</FieldError>
+            <DialogFooter>
+              <Button type="submit" disabled={updateLineItem.isPending || disabled}>
+                {updateLineItem.isPending ? "Saving..." : "Save changes"}
+              </Button>
+            </DialogFooter>
           </form>
         ) : null}
       </DialogContent>

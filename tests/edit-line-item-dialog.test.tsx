@@ -66,4 +66,55 @@ describe("EditLineItemDialog", () => {
     expect(screen.getByLabelText(/quantity unit/i)).toHaveValue("MT");
     expect(screen.getByLabelText(/pricing unit/i)).toHaveValue("per MT");
   });
+
+  it("reloads unit values when editing a different line item", async () => {
+    const user = userEvent.setup();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <EditLineItemDialog
+          organisationId="org_1"
+          contractId="contract_1"
+          lineItem={{
+            id: "line_1",
+            description: "Copper cathodes",
+            quantity: "100",
+            quantityUnit: "MT",
+            unitPrice: "9500",
+            pricingUnit: "per MT",
+          }}
+          disabled={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByLabelText(/quantity unit/i)).toHaveValue("MT");
+
+    await user.click(screen.getByRole("button", { name: /close/i }));
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <EditLineItemDialog
+          organisationId="org_1"
+          contractId="contract_1"
+          lineItem={{
+            id: "line_2",
+            description: "Aluminium ingots",
+            quantity: "250",
+            quantityUnit: "kg",
+            unitPrice: "3.5",
+            pricingUnit: "per kg",
+          }}
+          disabled={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /edit/i }));
+    expect(screen.getByLabelText(/quantity unit/i)).toHaveValue("kg");
+    expect(screen.getByLabelText(/pricing unit/i)).toHaveValue("per kg");
+  });
 });
