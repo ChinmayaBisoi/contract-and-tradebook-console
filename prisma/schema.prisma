@@ -93,6 +93,7 @@ enum UploadSourceType {
 }
 
 enum UploadStatus {
+  PENDING
   UPLOADED
   PROCESSING
   PROCESSED
@@ -140,13 +141,18 @@ model Upload {
   organisation          Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   uploadedByClerkUserId String
   sourceType            UploadSourceType
-  status                UploadStatus     @default(UPLOADED)
+  status                UploadStatus     @default(PENDING)
   fileName              String?
   mimeType              String?
   fileSizeBytes         Int?
   storageKey            String?
   blobUrl               String?
   checksum              String?
+  uploadedAt            DateTime?
+  processingStartedAt   DateTime?
+  processedAt           DateTime?
+  failedAt              DateTime?
+  failureMessage        String?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
   tradebookImport       TradebookImport?
@@ -156,28 +162,36 @@ model Upload {
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status, createdAt])
+  @@index([organisationId, uploadedByClerkUserId, createdAt])
   @@index([checksum])
 }
 
 model TradebookImport {
-  id                    String                @id @default(cuid())
-  organisationId        String
-  organisation          Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  uploadId              String                @unique
-  upload                Upload                @relation(fields: [uploadId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  status                TradebookImportStatus @default(PENDING)
-  sheetNames            Json
-  workbookSnapshot      Json?
-  formulaSnapshot       Json?
-  mappingConfig         Json?
-  validationErrors      Json?
-  importedContractCount Int                   @default(0)
-  importedLineItemCount Int                   @default(0)
-  createdAt             DateTime              @default(now())
-  updatedAt             DateTime              @updatedAt
-  contracts             Contract[]
-  lineItems             LineItem[]
-  auditEvents           AuditEvent[]
+  id                           String                @id @default(cuid())
+  organisationId               String
+  organisation                 Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  uploadId                     String                @unique
+  upload                       Upload                @relation(fields: [uploadId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  status                       TradebookImportStatus @default(PENDING)
+  sheetNames                   Json
+  workbookSnapshot             Json?
+  formulaSnapshot              Json?
+  mappingConfig                Json?
+  validationErrors             Json?
+  selectedSourceOrganisationId String?
+  reviewPatches                Json?
+  discardedRows                Json?
+  preparedAt                   DateTime?
+  importedAt                   DateTime?
+  failedAt                     DateTime?
+  failureMessage               String?
+  importedContractCount        Int                   @default(0)
+  importedLineItemCount        Int                   @default(0)
+  createdAt                    DateTime              @default(now())
+  updatedAt                    DateTime              @updatedAt
+  contracts                    Contract[]
+  lineItems                    LineItem[]
+  auditEvents                  AuditEvent[]
 
   @@index([organisationId, createdAt])
   @@index([organisationId, status, createdAt])
