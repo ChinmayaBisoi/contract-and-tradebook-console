@@ -25,11 +25,11 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   type ContractProposal,
   contractProposalSchema,
-  parseContractJson,
+  parseContractJsonFile,
 } from "@/lib/contracts/contract-proposal";
 import { useTRPC } from "@/trpc/client";
 
-type ImportSource = "JSON" | "AI_EXTRACT";
+const MAX_JSON_FILE_BYTES = 10_000_000;
 
 let nextItemKey = 0;
 function createItemKey() {
@@ -63,19 +63,36 @@ export function ImportContractDialog({
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [contractText, setContractText] = useState("");
-  const [sourceType, setSourceType] = useState<ImportSource>("AI_EXTRACT");
-  const [proposal, setProposal] = useState<ContractProposal | null>(null);
-  const [itemKeys, setItemKeys] = useState<string[]>([]);
+  const [extractionReceipt, setExtractionReceipt] = useState<string | null>(
+    null,
+  );
+  const [proposals, setProposals] = useState<ContractProposal[]>([]);
+  const [proposalIndex, setProposalIndex] = useState(0);
+  const [itemKeysByProposal, setItemKeysByProposal] = useState<string[][]>([]);
   const [error, setError] = useState<string | null>(null);
   const extract = useMutation(trpc.contract.extract.mutationOptions());
   const importDraft = useMutation(trpc.contract.importDraft.mutationOptions());
+  const importDrafts = useMutation(
+    trpc.contract.importDrafts.mutationOptions(),
+  );
+  const proposal = proposals[proposalIndex] ?? null;
+  const itemKeys = itemKeysByProposal[proposalIndex] ?? [];
 
   function reset() {
     setContractText("");
-    setSourceType("AI_EXTRACT");
-    setProposal(null);
-    setItemKeys([]);
+    setExtractionReceipt(null);
+    setProposals([]);
+    setProposalIndex(0);
+    setItemKeysByProposal([]);
     setError(null);
+  }
+
+  function loadProposals(values: ContractProposal[]) {
+    setProposals(values);
+    setProposalIndex(0);
+    setItemKeysByProposal(
+      values.map((value) => value.items.map(createItemKey)),
+    );
   }
 
   function handleOpenChange(next: boolean) {
@@ -90,22 +107,24 @@ export function ImportContractDialog({
         organisationId,
         text: contractText,
       });
-      setSourceType("AI_EXTRACT");
-      setProposal({
-        ...extracted,
-        contract: {
-          ...extracted.contract,
-          poDate: new Date(extracted.contract.poDate),
-          paymentTerms: extracted.contract.paymentTerms ?? undefined,
-          deliveryTerms: extracted.contract.deliveryTerms ?? undefined,
+      setExtractionReceipt(extracted.extractionReceipt);
+      loadProposals([
+        {
+          ...extracted.proposal,
+          contract: {
+            ...extracted.proposal.contract,
+            poDate: new Date(extracted.proposal.contract.poDate),
+            paymentTerms: extracted.proposal.contract.paymentTerms ?? undefined,
+            deliveryTerms:
+              extracted.proposal.contract.deliveryTerms ?? undefined,
+          },
+          items: extracted.proposal.items.map((item) => ({
+            ...item,
+            quantityUnit: item.quantityUnit ?? undefined,
+            pricingUnit: item.pricingUnit ?? undefined,
+          })),
         },
-        items: extracted.items.map((item) => ({
-          ...item,
-          quantityUnit: item.quantityUnit ?? undefined,
-          pricingUnit: item.pricingUnit ?? undefined,
-        })),
-      });
-      setItemKeys(extracted.items.map(createItemKey));
+      ]);
     } catch (extractError) {
       setError(getMutationErrorMessage(extractError));
     }
@@ -114,11 +133,21 @@ export function ImportContractDialog({
   async function handleJsonFile(file: File | undefined) {
     if (!file) return;
     setError(null);
+    const isJsonMime = file.type === "" || file.type === "application/json";
+    if (!file.name.toLowerCase().endsWith(".json") || !isJsonMime) {
+      setError("Choose a .json file.");
+      return;
+    }
+    if (file.size > MAX_JSON_FILE_BYTES) {
+      setError("JSON files must be 10 MB or smaller.");
+      return;
+    }
     try {
-      const parsed = parseContractJson(JSON.parse(await readJsonFile(file)));
-      setSourceType("JSON");
-      setProposal(parsed);
-      setItemKeys(parsed.items.map(createItemKey));
+      const parsed = parseContractJsonFile(
+        JSON.parse(await readJsonFile(file)),
+      );
+      setExtractionReceipt(null);
+      loadProposals(parsed);
     } catch (fileError) {
       setError(
         fileError instanceof Error
@@ -132,17 +161,21 @@ export function ImportContractDialog({
     field: keyof ContractProposal["contract"],
     value: string,
   ) {
-    setProposal((current) =>
-      current
-        ? {
-            ...current,
+    setProposals((current) =>
+      current.map((entry, index) =>
+        index === proposalIndex
+          ? {
+            ...entry,
             contract: {
-              ...current.contract,
+              ...entry.contract,
               [field]:
-                field === "poDate" ? new Date(`${value}T00:00:00.000Z`) : value,
+                field === "poDate"
+                  ? new Date(`${value}T00:00:00.000Z`)
+                  : value,
             },
           }
-        : current,
+          : entry,
+      ),
     );
   }
 
@@ -151,27 +184,32 @@ export function ImportContractDialog({
     field: keyof ContractProposal["items"][number],
     value: string,
   ) {
-    setProposal((current) => {
-      if (!current) return current;
-      const items = [...current.items];
-      const item = items[index];
-      if (!item) return current;
-      items[index] = {
-        ...item,
-        [field]:
-          field === "quantity" || field === "unitPrice" ? Number(value) : value,
-      };
-      return { ...current, items };
-    });
+    setProposals((current) =>
+      current.map((entry, entryIndex) => {
+        if (entryIndex !== proposalIndex) return entry;
+        const items = [...entry.items];
+        const item = items[index];
+        if (!item) return entry;
+        items[index] = {
+          ...item,
+          [field]:
+            field === "quantity" || field === "unitPrice"
+              ? Number(value)
+              : value,
+        };
+        return { ...entry, items };
+      }),
+    );
   }
 
   function addItem() {
-    setProposal((current) =>
-      current
-        ? {
-            ...current,
+    setProposals((current) =>
+      current.map((entry, index) =>
+        index === proposalIndex
+          ? {
+            ...entry,
             items: [
-              ...current.items,
+              ...entry.items,
               {
                 description: "",
                 quantity: 1,
@@ -181,42 +219,61 @@ export function ImportContractDialog({
               },
             ],
           }
-        : current,
+          : entry,
+      ),
     );
-    setItemKeys((current) => [...current, createItemKey()]);
+    setItemKeysByProposal((current) =>
+      current.map((keys, index) =>
+        index === proposalIndex ? [...keys, createItemKey()] : keys,
+      ),
+    );
   }
 
   function removeItem(index: number) {
-    setProposal((current) =>
-      current
-        ? {
-            ...current,
-            items: current.items.filter((_, itemIndex) => itemIndex !== index),
+    setProposals((current) =>
+      current.map((entry, entryIndex) =>
+        entryIndex === proposalIndex
+          ? {
+            ...entry,
+            items: entry.items.filter((_, itemIndex) => itemIndex !== index),
           }
-        : current,
+          : entry,
+      ),
     );
-    setItemKeys((current) =>
-      current.filter((_, itemIndex) => itemIndex !== index),
+    setItemKeysByProposal((current) =>
+      current.map((keys, entryIndex) =>
+        entryIndex === proposalIndex
+          ? keys.filter((_, itemIndex) => itemIndex !== index)
+          : keys,
+      ),
     );
   }
 
   async function handleAccept() {
     if (!proposal) return;
     setError(null);
-    const parsed = contractProposalSchema.safeParse(proposal);
+    const parsed = contractProposalSchema.array().min(1).safeParse(proposals);
     if (!parsed.success) {
       setError(
         parsed.error.issues[0]?.message ?? "Please review the contract values.",
       );
       return;
     }
+    const firstProposal = parsed.data[0];
+    if (!firstProposal) return;
 
     try {
-      const created = await importDraft.mutateAsync({
-        organisationId,
-        sourceType,
-        proposal: parsed.data,
-      });
+      const created =
+        parsed.data.length === 1
+          ? await importDraft.mutateAsync({
+            organisationId,
+            ...(extractionReceipt ? { extractionReceipt } : {}),
+            proposal: firstProposal,
+          })
+          : await importDrafts.mutateAsync({
+            organisationId,
+            proposals: parsed.data,
+          });
       await Promise.all([
         queryClient.invalidateQueries(
           trpc.contract.list.queryFilter({ organisationId }),
@@ -225,9 +282,17 @@ export function ImportContractDialog({
           trpc.audit.list.queryFilter({ organisationId }),
         ),
       ]);
-      toast.success("Contract draft imported");
+      toast.success(
+        parsed.data.length === 1
+          ? "Contract draft imported"
+          : `${parsed.data.length} contract drafts imported`,
+      );
       handleOpenChange(false);
-      router.push(`/org/${organisationId}/contracts/${created.id}`);
+      router.push(
+        parsed.data.length === 1 && "id" in created
+          ? `/org/${organisationId}/contracts/${created.id}`
+          : `/org/${organisationId}/contracts`,
+      );
     } catch (importError) {
       const message = getMutationErrorMessage(importError);
       setError(message);
@@ -255,6 +320,33 @@ export function ImportContractDialog({
 
         {proposal ? (
           <div className="grid gap-5">
+            {proposals.length > 1 ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+                <p className="font-medium">
+                  Contract {proposalIndex + 1} of {proposals.length}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={proposalIndex === 0}
+                    onClick={() => setProposalIndex((index) => index - 1)}
+                  >
+                    Previous contract
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={proposalIndex === proposals.length - 1}
+                    onClick={() => setProposalIndex((index) => index + 1)}
+                  >
+                    Next contract
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-4 md:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="import-client-name">
@@ -492,10 +584,14 @@ export function ImportContractDialog({
             </Button>
             <Button
               type="button"
-              disabled={importDraft.isPending}
+              disabled={importDraft.isPending || importDrafts.isPending}
               onClick={() => void handleAccept()}
             >
-              {importDraft.isPending ? "Creating..." : "Accept and create"}
+              {importDraft.isPending || importDrafts.isPending
+                ? "Creating..."
+                : proposals.length > 1
+                  ? `Accept and create ${proposals.length}`
+                  : "Accept and create"}
             </Button>
           </DialogFooter>
         ) : null}

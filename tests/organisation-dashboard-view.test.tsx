@@ -47,6 +47,7 @@ function baseProps() {
     pageSize: 10,
     sort: "createdAt",
     sortDirection: "desc" as const,
+    pendingReceivedCount: 0,
     organisations: [organisation],
     invitations: [invitation],
     pagination,
@@ -117,6 +118,50 @@ describe("OrganisationDashboardView", () => {
     expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("shows a pending received badge on invitations tab", () => {
+    render(
+      <OrganisationDashboardView
+        {...baseProps()}
+        pendingReceivedCount={3}
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: /Invitations/ })).toHaveTextContent(
+      "3",
+    );
+  });
+
+  it("shows received-only member invitations with accept and decline actions", async () => {
+    const user = userEvent.setup();
+    const props = baseProps();
+    render(
+      <OrganisationDashboardView
+        {...props}
+        activeTab="invitations"
+        invitations={[
+          {
+            ...invitation,
+            id: "invite_received_1",
+            email: "member@example.com",
+            role: "MEMBER",
+            direction: "received",
+            canEdit: false,
+            canCancel: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("member@example.com")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Accept" }));
+    expect(props.onAcceptInvitation).toHaveBeenCalledWith("invite_received_1");
   });
 
   it("keeps terminal invitations read-only", () => {

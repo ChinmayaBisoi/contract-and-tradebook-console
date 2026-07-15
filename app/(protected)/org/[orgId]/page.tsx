@@ -1,7 +1,8 @@
-import Link from "next/link";
+import { Suspense } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { OrganisationAnalytics } from "@/components/organisation/organisation-analytics";
+import { OrganisationAnalyticsSkeleton } from "@/components/organisation/organisation-analytics-skeleton";
+import { OrganisationSectionErrorBoundary } from "@/components/organisation/organisation-section-error";
 import { getQueryClient, HydrateClient, trpc } from "@/trpc/server";
 
 export default async function OrganisationOverviewPage({
@@ -14,6 +15,9 @@ export default async function OrganisationOverviewPage({
   const organisation = await queryClient.fetchQuery(
     trpc.organisation.get.queryOptions({ id: orgId }),
   );
+  void queryClient.prefetchQuery(
+    trpc.organisation.getAnalytics.queryOptions({ organisationId: orgId }),
+  );
 
   if (organisation.role !== "OWNER" && organisation.role !== "ADMIN") {
     return null;
@@ -21,22 +25,11 @@ export default async function OrganisationOverviewPage({
 
   return (
     <HydrateClient>
-      <section aria-labelledby="organisation-overview-title" className="space-y-4">
-        <div>
-          <h2 id="organisation-overview-title" className="text-2xl font-semibold tracking-tight">Overview</h2>
-          <p className="text-sm text-muted-foreground">Quick actions for this organisation workspace.</p>
-        </div>
-        <Card>
-          <CardHeader>
-            <h3 className="text-base font-medium">Data exchange</h3>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button render={<Link href={`/org/${orgId}/imports`} />}>Import workbook</Button>
-            <Button variant="outline" render={<Link href={`/api/org/${orgId}/export?format=excel`} />}>Export Excel</Button>
-            <Button variant="outline" render={<Link href={`/api/org/${orgId}/export?format=json`} />}>Export JSON</Button>
-          </CardContent>
-        </Card>
-      </section>
+      <OrganisationSectionErrorBoundary>
+        <Suspense fallback={<OrganisationAnalyticsSkeleton />}>
+          <OrganisationAnalytics organisationId={orgId} />
+        </Suspense>
+      </OrganisationSectionErrorBoundary>
     </HydrateClient>
   );
 }

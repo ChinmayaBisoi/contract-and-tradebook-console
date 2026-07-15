@@ -6,6 +6,18 @@ import {
 } from "@/lib/contracts/contract-field-data";
 
 describe("contract field data", () => {
+  it("calculates decimal totals without binary floating-point artifacts", () => {
+    const item = toFieldDataItem({
+      description: "Precision item",
+      quantity: 0.1,
+      quantityUnit: undefined,
+      unitPrice: 0.2,
+      pricingUnit: undefined,
+    });
+
+    expect(item.total).toBe(0.02);
+  });
+
   it("matches the required json contract shape and tolerates missing optional fields", () => {
     const contract = {
       clientName: "Granite Construction Materials",

@@ -610,7 +610,6 @@ export const tradebookImportRouter = createTRPCRouter({
       importedContractCount: record.importedContractCount,
       importedLineItemCount: record.importedLineItemCount,
       failureMessage: record.failureMessage,
-      exportPath: `/api/org/${input.organisationId}/imports/${record.id}/workbook`,
       review: reviewState(record),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,

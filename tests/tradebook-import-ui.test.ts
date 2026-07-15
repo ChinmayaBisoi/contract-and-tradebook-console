@@ -56,7 +56,11 @@ describe("tradebook import pages", () => {
   it("provides a virtualized, editable, discardable review and commit flow", () => {
     const source = read("components/imports/tradebook-review-workspace.tsx");
     expect(source).toContain("useVirtualizer");
-    expect(source).toContain("Export workbook");
+    expect(source).toContain("Export Excel");
+    expect(source).toContain("Export JSON");
+    expect(source).not.toContain("Export workbook");
+    expect(source).toContain(`/api/org/\${organisationId}/export?format=excel`);
+    expect(source).toContain(`/api/org/\${organisationId}/export?format=json`);
     expect(source).toContain("previewSheet");
     expect(source).toContain("suggestMapping");
     expect(source).toContain("Manual column mapping");

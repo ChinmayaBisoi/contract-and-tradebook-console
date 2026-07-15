@@ -38,6 +38,7 @@ export const contractJsonSchema = z
           quantity_unit: z.string().trim().max(50).nullable().optional(),
           unit_price: z.coerce.number().min(0),
           pricing_unit: z.string().trim().max(50).nullable().optional(),
+          total: z.coerce.number().min(0).nullable().optional(),
         })
         .strict(),
     ),
@@ -93,4 +94,16 @@ export function parseContractJson(value: unknown): ContractProposal {
       pricingUnit: item.pricing_unit?.trim() || undefined,
     })),
   });
+}
+
+export function parseContractJsonFile(value: unknown): ContractProposal[] {
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length === 0) {
+    throw new Error("The JSON export must contain at least one contract.");
+  }
+  if (values.length > 500) {
+    throw new Error("A JSON file can contain at most 500 contracts.");
+  }
+
+  return values.map(parseContractJson);
 }

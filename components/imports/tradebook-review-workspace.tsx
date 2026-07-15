@@ -271,7 +271,7 @@ function SheetPreview({
                   "absolute left-0 top-0 grid min-w-full border-b bg-card text-xs",
                   isHeader && "sticky z-10 bg-muted font-semibold",
                   isFooter &&
-                    "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
+                  "bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200",
                   isDiscarded && "bg-destructive/5 opacity-55 line-through",
                 )}
                 style={{
@@ -461,15 +461,15 @@ export function TradebookReviewWorkspace({
       current.map((sheet) =>
         sheet.name === suggestion.sheetName
           ? {
-              ...sheet,
-              mapping: {
-                ...sheet.mapping,
-                [suggestion.field]: suggestion.columnIndex,
-              },
-              missingRequired: sheet.missingRequired.filter(
-                (field) => field !== suggestion.field,
-              ),
-            }
+            ...sheet,
+            mapping: {
+              ...sheet.mapping,
+              [suggestion.field]: suggestion.columnIndex,
+            },
+            missingRequired: sheet.missingRequired.filter(
+              (field) => field !== suggestion.field,
+            ),
+          }
           : sheet,
       ),
     );
@@ -557,9 +557,19 @@ export function TradebookReviewWorkspace({
           <CardContent className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              render={<Link href={data.exportPath} />}
+              render={
+                <Link href={`/api/org/${organisationId}/export?format=excel`} />
+              }
             >
-              Export workbook
+              Export Excel
+            </Button>
+            <Button
+              variant="outline"
+              render={
+                <Link href={`/api/org/${organisationId}/export?format=json`} />
+              }
+            >
+              Export JSON
             </Button>
             <Button render={<Link href={`/org/${organisationId}/contracts`} />}>
               View contracts
@@ -608,9 +618,6 @@ export function TradebookReviewWorkspace({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" render={<Link href={data.exportPath} />}>
-            Export workbook
-          </Button>
           <Button
             variant="outline"
             onClick={handleSave}
@@ -804,13 +811,13 @@ export function TradebookReviewWorkspace({
                             current.map((entry) =>
                               entry.name === sheet.name
                                 ? {
-                                    ...entry,
-                                    headerRow:
-                                      Number.isInteger(headerRow) &&
+                                  ...entry,
+                                  headerRow:
+                                    Number.isInteger(headerRow) &&
                                       headerRow > 0
-                                        ? headerRow
-                                        : null,
-                                  }
+                                      ? headerRow
+                                      : null,
+                                }
                                 : entry,
                             ),
                           );

@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryStates } from "nuqs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useUserEvents } from "@/components/realtime/use-user-events";
 import { OrganisationDashboardView } from "@/components/dashboard/organisation-dashboard-view";
@@ -43,8 +43,8 @@ export function OrganisationDashboard() {
       filters: {
         ...(search ? { search } : {}),
         ...(roleFilter === "OWNER" ||
-        roleFilter === "ADMIN" ||
-        roleFilter === "MEMBER"
+          roleFilter === "ADMIN" ||
+          roleFilter === "MEMBER"
           ? { role: roleFilter }
           : {}),
       },
@@ -66,10 +66,10 @@ export function OrganisationDashboard() {
             : "all",
         ...(search ? { search } : {}),
         ...(statusFilter === "PENDING" ||
-        statusFilter === "ACCEPTED" ||
-        statusFilter === "DECLINED" ||
-        statusFilter === "EXPIRED" ||
-        statusFilter === "CANCELLED"
+          statusFilter === "ACCEPTED" ||
+          statusFilter === "DECLINED" ||
+          statusFilter === "EXPIRED" ||
+          statusFilter === "CANCELLED"
           ? { status: statusFilter }
           : {}),
       },
@@ -82,6 +82,19 @@ export function OrganisationDashboard() {
       sortDirection: queryState.sortDirection ?? "desc",
     }),
     enabled: queryState.tab === "invitations",
+    placeholderData: keepPreviousData,
+  });
+  const pendingReceivedInvitationQuery = useQuery({
+    ...trpc.invitation.list.queryOptions({
+      filters: {
+        direction: "received",
+        status: "PENDING",
+      },
+      page: 1,
+      pageSize: 10,
+      sort: "createdAt",
+      sortDirection: "desc",
+    }),
     placeholderData: keepPreviousData,
   });
 
@@ -103,6 +116,7 @@ export function OrganisationDashboard() {
   const cancelInvitation = useMutation(
     trpc.invitation.cancel.mutationOptions(),
   );
+  const didAutoSwitchToInvitations = useRef(false);
 
   useUserEvents({
     onEvent: async (event) => {
@@ -143,7 +157,11 @@ export function OrganisationDashboard() {
         await invalidateDashboard();
         toast.success(successMessage);
       })
-      .catch((error: unknown) => setMutationError(errorMessage(error)));
+      .catch((error: unknown) => {
+        const message = errorMessage(error);
+        setMutationError(message);
+        toast.error(message);
+      });
   }
 
   const activeQuery =
@@ -161,11 +179,47 @@ export function OrganisationDashboard() {
     acceptInvitation.isPending ||
     declineInvitation.isPending ||
     cancelInvitation.isPending;
+  const pendingReceivedCount =
+    pendingReceivedInvitationQuery.data?.pagination.total ?? 0;
+
+  useEffect(() => {
+    if (didAutoSwitchToInvitations.current) {
+      return;
+    }
+
+    if (queryState.tab !== "organisations") {
+      return;
+    }
+
+    if (queryState.page !== 1 || queryState.filters.length > 0 || queryState.sort) {
+      return;
+    }
+
+    if (!organisationQuery.isSuccess || !pendingReceivedInvitationQuery.isSuccess) {
+      return;
+    }
+
+    if (
+      organisationQuery.data.pagination.total === 0 &&
+      pendingReceivedCount > 0
+    ) {
+      didAutoSwitchToInvitations.current = true;
+      setQueryState(getDashboardQueryUpdate(queryState, { tab: "invitations" }));
+    }
+  }, [
+    organisationQuery.data,
+    organisationQuery.isSuccess,
+    pendingReceivedCount,
+    pendingReceivedInvitationQuery.isSuccess,
+    queryState,
+    setQueryState,
+  ]);
 
   return (
     <OrganisationDashboardView
       {...queryState}
       activeTab={queryState.tab}
+      pendingReceivedCount={pendingReceivedCount}
       organisations={organisationQuery.data?.data ?? []}
       invitations={invitationQuery.data?.data ?? []}
       pagination={pagination}

@@ -35,18 +35,37 @@ describe("organisation details router", () => {
       _min: { poDate: new Date("2026-01-01T00:00:00.000Z") },
       _max: { poDate: new Date("2026-07-10T00:00:00.000Z") },
     });
-    const contractFindMany = vi.fn().mockResolvedValue([
-      {
-        id: "contract_1",
-        poRefNo: "PO-001",
-        clientName: "Acme",
-      },
-      {
-        id: "contract_2",
-        poRefNo: "PO-002",
-        clientName: "Bravo",
-      },
-    ]);
+    const contractFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "contract_1",
+          poRefNo: "PO-001",
+          clientName: "Acme",
+        },
+        {
+          id: "contract_2",
+          poRefNo: "PO-002",
+          clientName: "Bravo",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          poDate: new Date("2026-07-01T00:00:00.000Z"),
+          total: "1200.50",
+          _count: { lineItems: 4 },
+        },
+        {
+          poDate: new Date("2026-07-01T00:00:00.000Z"),
+          total: "300.25",
+          _count: { lineItems: 2 },
+        },
+        {
+          poDate: new Date("2026-07-02T00:00:00.000Z"),
+          total: "999.99",
+          _count: { lineItems: 1 },
+        },
+      ]);
     const lineItemCount = vi.fn().mockResolvedValue(3450);
     const lineItemAggregate = vi.fn().mockResolvedValue({
       _avg: { total: "1338025.35" },
@@ -58,16 +77,6 @@ describe("organisation details router", () => {
         { status: "DRAFT", _count: { _all: 14 } },
         { status: "FINALIZED", _count: { _all: 14 } },
         { status: "ARCHIVED", _count: { _all: 14 } },
-      ])
-      .mockResolvedValueOnce([
-        {
-          poDate: new Date("2026-07-01T00:00:00.000Z"),
-          _count: { _all: 2 },
-        },
-        {
-          poDate: new Date("2026-07-02T00:00:00.000Z"),
-          _count: { _all: 1 },
-        },
       ]);
     const caller = createCaller(
       {
@@ -130,8 +139,18 @@ describe("organisation details router", () => {
       { id: "contract_2", label: "PO-002 - Bravo" },
     ]);
     expect(result.contractsOverTime).toEqual([
-      { date: "2026-07-01", contractCount: 2 },
-      { date: "2026-07-02", contractCount: 1 },
+      {
+        date: "2026-07-01",
+        contractCount: 2,
+        lineItemCount: 6,
+        contractValue: 1500.75,
+      },
+      {
+        date: "2026-07-02",
+        contractCount: 1,
+        lineItemCount: 1,
+        contractValue: 999.99,
+      },
     ]);
     expect(result.ageInDays).toBe(14);
     expect(memberCount).toHaveBeenNthCalledWith(1, {
@@ -156,13 +175,34 @@ describe("organisation details router", () => {
       _min: { poDate: true },
       _max: { poDate: true },
     });
-    expect(contractFindMany).toHaveBeenCalledWith({
+    expect(contractFindMany).toHaveBeenNthCalledWith(1, {
       where: { organisationId: "org_1" },
       orderBy: [{ poDate: "desc" }, { poRefNo: "asc" }],
       select: {
         id: true,
         poRefNo: true,
         clientName: true,
+      },
+    });
+    expect(contractFindMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        organisationId: "org_1",
+        id: "contract_1",
+        status: "FINALIZED",
+        poDate: {
+          gte: new Date("2026-07-01T00:00:00.000Z"),
+          lte: new Date("2026-07-10T00:00:00.000Z"),
+        },
+      },
+      orderBy: { poDate: "asc" },
+      select: {
+        poDate: true,
+        total: true,
+        _count: {
+          select: {
+            lineItems: true,
+          },
+        },
       },
     });
     expect(lineItemCount).toHaveBeenCalledWith({
@@ -177,20 +217,6 @@ describe("organisation details router", () => {
       by: ["status"],
       where: { organisationId: "org_1" },
       _count: { _all: true },
-    });
-    expect(contractGroupBy).toHaveBeenNthCalledWith(2, {
-      by: ["poDate"],
-      where: {
-        organisationId: "org_1",
-        id: "contract_1",
-        status: "FINALIZED",
-        poDate: {
-          gte: new Date("2026-07-01T00:00:00.000Z"),
-          lte: new Date("2026-07-10T00:00:00.000Z"),
-        },
-      },
-      _count: { _all: true },
-      orderBy: { poDate: "asc" },
     });
     vi.useRealTimers();
   });

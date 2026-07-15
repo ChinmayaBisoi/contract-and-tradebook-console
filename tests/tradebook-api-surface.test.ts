@@ -33,7 +33,7 @@ describe("tradebook import API surface", () => {
     expect(source).toContain("review: reviewState(record)");
   });
 
-  it("returns export metadata for reviewed workbook downloads", () => {
-    expect(source).toContain("exportPath");
+  it("does not expose a source-workbook export path", () => {
+    expect(source).not.toContain("exportPath");
   });
 });

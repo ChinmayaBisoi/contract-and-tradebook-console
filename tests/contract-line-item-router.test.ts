@@ -1,6 +1,7 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { createContractExtractionReceipt } from "@/lib/contracts/contract-extraction-receipt";
 import { appRouter } from "@/trpc/routers/_app";
 
 const ownerAuth = {
@@ -58,7 +59,76 @@ function createDb(overrides: Partial<Record<string, unknown>>) {
 }
 
 describe("contract and line item routers", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("imports an exported JSON batch in one transaction", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.create
+      .mockResolvedValueOnce({
+        id: "contract_1",
+        organisationId: "org_1",
+        clientName: "Acme",
+        poRefNo: "PO-1",
+        poDate: new Date("2026-07-01T00:00:00.000Z"),
+        status: "DRAFT",
+        sourceType: "JSON",
+        paymentTerms: null,
+        deliveryTerms: null,
+        total: { toString: () => "20" },
+        fieldData: {},
+        updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+        lineItems: [],
+        auditEvents: [],
+      })
+      .mockResolvedValueOnce({
+        id: "contract_2",
+        organisationId: "org_1",
+        clientName: "Beta",
+        poRefNo: "PO-2",
+        poDate: new Date("2026-07-02T00:00:00.000Z"),
+        status: "DRAFT",
+        sourceType: "JSON",
+        paymentTerms: null,
+        deliveryTerms: null,
+        total: { toString: () => "30" },
+        fieldData: {},
+        updatedAt: new Date("2026-07-02T00:00:00.000Z"),
+        lineItems: [],
+        auditEvents: [],
+      });
+
+    const result = await createCaller(db).contract.importDrafts({
+      organisationId: "org_1",
+      proposals: [
+        {
+          contract: {
+            clientName: "Acme",
+            poRefNo: "PO-1",
+            poDate: new Date("2026-07-01T00:00:00.000Z"),
+          },
+          items: [{ description: "A", quantity: 2, unitPrice: 10 }],
+        },
+        {
+          contract: {
+            clientName: "Beta",
+            poRefNo: "PO-2",
+            poDate: new Date("2026-07-02T00:00:00.000Z"),
+          },
+          items: [{ description: "B", quantity: 3, unitPrice: 10 }],
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({ contractCount: 2, lineItemCount: 2 });
+    expect(db.$transaction).toHaveBeenCalledOnce();
+    expect(tx.contract.create).toHaveBeenCalledTimes(2);
+    expect(tx.auditEvent.create).toHaveBeenCalledTimes(2);
+  });
+
   it("imports a reviewed AI proposal as one atomic draft", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-extraction-secret");
     const { db, tx } = createDb({});
     tx.contract.create.mockResolvedValue({
       id: "contract_ai",
@@ -91,7 +161,11 @@ describe("contract and line item routers", () => {
 
     const result = await createCaller(db).contract.importDraft({
       organisationId: "org_1",
-      sourceType: "AI_EXTRACT",
+      extractionReceipt: createContractExtractionReceipt({
+        organisationId: "org_1",
+        clerkUserId: ownerAuth.clerkUserId,
+        secret: "test-extraction-secret",
+      }),
       proposal: {
         contract: {
           clientName: "Acme",
@@ -148,6 +222,76 @@ describe("contract and line item routers", () => {
         }),
       }),
     );
+  });
+
+  it("derives JSON provenance and stores exact decimal totals", async () => {
+    const { db, tx } = createDb({});
+    tx.contract.create.mockResolvedValue({
+      id: "contract_json",
+      organisationId: "org_1",
+      clientName: "Acme",
+      poRefNo: "PO-JSON-1",
+      poDate: new Date("2026-07-01T00:00:00.000Z"),
+      status: "DRAFT",
+      sourceType: "JSON",
+      paymentTerms: null,
+      deliveryTerms: null,
+      total: { toString: () => "0.02" },
+      fieldData: {},
+      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lineItems: [],
+      auditEvents: [],
+    });
+
+    await createCaller(db).contract.importDraft({
+      organisationId: "org_1",
+      proposal: {
+        contract: {
+          clientName: "Acme",
+          poRefNo: "PO-JSON-1",
+          poDate: new Date("2026-07-01T00:00:00.000Z"),
+        },
+        items: [{ description: "Precise", quantity: 0.1, unitPrice: 0.2 }],
+      },
+    });
+
+    const createArgs = tx.contract.create.mock.calls[0]?.[0] as {
+      data: {
+        sourceType: string;
+        total: { toString(): string };
+        fieldData: { total: number };
+        lineItems: { create: Array<{ total: { toString(): string } }> };
+      };
+    };
+    expect(createArgs.data.sourceType).toBe("JSON");
+    expect(createArgs.data.total.toString()).toBe("0.02");
+    expect(createArgs.data.fieldData.total).toBe(0.02);
+    expect(createArgs.data.lineItems.create[0]?.total.toString()).toBe("0.02");
+  });
+
+  it("rejects forged AI provenance before writing", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-extraction-secret");
+    const { db } = createDb({});
+
+    await expect(
+      createCaller(db).contract.importDraft({
+        organisationId: "org_1",
+        extractionReceipt: createContractExtractionReceipt({
+          organisationId: "another_org",
+          clerkUserId: ownerAuth.clerkUserId,
+          secret: "test-extraction-secret",
+        }),
+        proposal: {
+          contract: {
+            clientName: "Acme",
+            poRefNo: "PO-FORGED",
+            poDate: new Date("2026-07-01T00:00:00.000Z"),
+          },
+          items: [],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(db.$transaction).not.toHaveBeenCalled();
   });
 
   it("creates draft contracts and records a create event", async () => {

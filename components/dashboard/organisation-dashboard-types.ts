@@ -44,6 +44,7 @@ export type Pagination = {
 
 export type OrganisationDashboardViewProps = DashboardQueryState & {
   activeTab: DashboardQueryState["tab"];
+  pendingReceivedCount: number;
   organisations: OrganisationRow[];
   invitations: InvitationRow[];
   pagination: Pagination;

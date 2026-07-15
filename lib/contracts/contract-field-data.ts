@@ -1,4 +1,8 @@
-import type { ContractInput, LineItemInput } from "@/lib/contracts/contract-schemas";
+import type {
+  ContractInput,
+  LineItemInput,
+} from "@/lib/contracts/contract-schemas";
+import { Prisma } from "@/lib/generated/prisma/client";
 
 type FieldDataItem = {
   description: string;
@@ -15,7 +19,12 @@ type ContractFieldDataInput = {
 };
 
 export function computeContractTotal(items: FieldDataItem[]) {
-  return items.reduce((sum, item) => sum + item.total, 0);
+  return items
+    .reduce(
+      (sum, item) => sum.plus(new Prisma.Decimal(item.total.toString())),
+      new Prisma.Decimal(0),
+    )
+    .toNumber();
 }
 
 function toDateOnly(date: Date) {
@@ -44,6 +53,8 @@ export function toFieldDataItem(item: LineItemInput): FieldDataItem {
     quantity_unit: item.quantityUnit,
     unit_price: item.unitPrice,
     pricing_unit: item.pricingUnit,
-    total: item.quantity * item.unitPrice,
+    total: new Prisma.Decimal(item.quantity.toString())
+      .mul(new Prisma.Decimal(item.unitPrice.toString()))
+      .toNumber(),
   };
 }

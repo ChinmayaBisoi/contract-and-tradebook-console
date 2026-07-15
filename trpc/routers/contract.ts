@@ -8,10 +8,17 @@ import {
   extractContractProposal,
 } from "@/lib/contracts/contract-extraction";
 import {
+  createContractExtractionReceipt,
+  verifyContractExtractionReceipt,
+} from "@/lib/contracts/contract-extraction-receipt";
+import {
   buildContractFieldData,
   toFieldDataItem,
 } from "@/lib/contracts/contract-field-data";
-import { contractProposalSchema } from "@/lib/contracts/contract-proposal";
+import {
+  type ContractProposal,
+  contractProposalSchema,
+} from "@/lib/contracts/contract-proposal";
 import { contractInputSchema } from "@/lib/contracts/contract-schemas";
 import { Prisma } from "@/lib/generated/prisma/client";
 import {
@@ -65,8 +72,13 @@ const contractExtractInput = z.object({
 
 const contractImportDraftInput = z.object({
   organisationId: z.string().min(1),
-  sourceType: z.enum(["JSON", "AI_EXTRACT"]),
+  extractionReceipt: z.string().min(1).max(2048).optional(),
   proposal: contractProposalSchema,
+});
+
+const contractImportDraftsInput = z.object({
+  organisationId: z.string().min(1),
+  proposals: z.array(contractProposalSchema).min(2).max(500),
 });
 
 const contractUpdateInput = z.object({
@@ -236,6 +248,60 @@ function validateContractStatusTransition({
   });
 }
 
+function prepareImportedItems(
+  items: ContractProposal["items"],
+  organisationId: string,
+) {
+  const fieldItems = items.map(toFieldDataItem);
+  const lineItems = items.map((item, sortOrder) => {
+    const quantity = new Prisma.Decimal(item.quantity.toString());
+    const unitPrice = new Prisma.Decimal(item.unitPrice.toString());
+    return {
+      organisationId,
+      description: item.description,
+      quantity,
+      quantityUnit: item.quantityUnit,
+      unitPrice,
+      pricingUnit: item.pricingUnit,
+      total: quantity.mul(unitPrice),
+      sortOrder,
+    };
+  });
+  const total = lineItems.reduce(
+    (sum, item) => sum.plus(item.total),
+    new Prisma.Decimal(0),
+  );
+
+  return { fieldItems, lineItems, total };
+}
+
+function deriveImportSourceType({
+  extractionReceipt,
+  organisationId,
+  clerkUserId,
+}: {
+  extractionReceipt?: string;
+  organisationId: string;
+  clerkUserId: string;
+}): "JSON" | "AI_EXTRACT" {
+  if (!extractionReceipt) return "JSON";
+
+  try {
+    verifyContractExtractionReceipt({
+      receipt: extractionReceipt,
+      organisationId,
+      clerkUserId,
+      secret: process.env.OPENAI_API_KEY ?? "",
+    });
+    return "AI_EXTRACT";
+  } catch {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "AI extraction receipt is invalid or expired.",
+    });
+  }
+}
+
 export const contractRouter = createTRPCRouter({
   extract: protectedProcedure
     .input(contractExtractInput)
@@ -249,7 +315,25 @@ export const contractRouter = createTRPCRouter({
       });
 
       try {
-        return await extractContractProposal({ text: input.text });
+        const apiKey = process.env.OPENAI_API_KEY;
+        const proposal = await extractContractProposal({
+          text: input.text,
+          apiKey,
+        });
+        if (!apiKey) {
+          throw new ContractExtractionError(
+            "NOT_CONFIGURED",
+            "AI contract extraction is unavailable until OPENAI_API_KEY is configured.",
+          );
+        }
+        return {
+          proposal,
+          extractionReceipt: createContractExtractionReceipt({
+            organisationId: input.organisationId,
+            clerkUserId: ctx.auth.clerkUserId,
+            secret: apiKey,
+          }),
+        };
       } catch (error) {
         if (error instanceof ContractExtractionError) {
           throw new TRPCError({
@@ -492,38 +576,35 @@ export const contractRouter = createTRPCRouter({
         action: "contract:create",
         findMembership: createOrganisationMembershipFinder(db),
       });
-      const fieldItems = input.proposal.items.map(toFieldDataItem);
-      const total = fieldItems.reduce((sum, item) => sum + item.total, 0);
+      const sourceType = deriveImportSourceType({
+        extractionReceipt: input.extractionReceipt,
+        organisationId: input.organisationId,
+        clerkUserId: ctx.auth.clerkUserId,
+      });
+      const { fieldItems, lineItems, total } = prepareImportedItems(
+        input.proposal.items,
+        input.organisationId,
+      );
+      const totalForJson = total.toNumber();
 
       try {
         const created = await db.$transaction(async (tx) => {
           const created = await tx.contract.create({
             data: {
               organisationId: input.organisationId,
-              sourceType: input.sourceType,
+              sourceType,
               clientName: input.proposal.contract.clientName,
               poRefNo: input.proposal.contract.poRefNo,
               poDate: input.proposal.contract.poDate,
               paymentTerms: input.proposal.contract.paymentTerms,
               deliveryTerms: input.proposal.contract.deliveryTerms,
-              total: new Prisma.Decimal(total),
+              total,
               fieldData: buildContractFieldData({
                 contract: input.proposal.contract,
                 items: fieldItems,
               }),
               createdByClerkUserId: ctx.auth.clerkUserId,
-              lineItems: {
-                create: input.proposal.items.map((item, sortOrder) => ({
-                  organisationId: input.organisationId,
-                  description: item.description,
-                  quantity: new Prisma.Decimal(item.quantity),
-                  quantityUnit: item.quantityUnit,
-                  unitPrice: new Prisma.Decimal(item.unitPrice),
-                  pricingUnit: item.pricingUnit,
-                  total: new Prisma.Decimal(item.quantity * item.unitPrice),
-                  sortOrder,
-                })),
-              },
+              lineItems: { create: lineItems },
             },
             include: {
               lineItems: {
@@ -549,7 +630,7 @@ export const contractRouter = createTRPCRouter({
               status: created.status,
               sourceType: created.sourceType,
               itemCount: input.proposal.items.length,
-              total,
+              total: totalForJson,
             },
           });
 
@@ -565,6 +646,98 @@ export const contractRouter = createTRPCRouter({
         });
 
         return created;
+      } catch (error) {
+        return mapWriteError(error);
+      }
+    }),
+
+  importDrafts: protectedProcedure
+    .input(contractImportDraftsInput)
+    .mutation(async ({ ctx, input }) => {
+      const db = ctx.db as unknown as ContractDb;
+      const membership = await checkOrgPermission({
+        clerkUserId: ctx.auth.clerkUserId,
+        organisationId: input.organisationId,
+        action: "contract:create",
+        findMembership: createOrganisationMembershipFinder(db),
+      });
+
+      try {
+        const created = await db.$transaction(async (tx) => {
+          const records = [];
+          for (const proposal of input.proposals) {
+            const { fieldItems, lineItems, total } = prepareImportedItems(
+              proposal.items,
+              input.organisationId,
+            );
+            const totalForJson = total.toNumber();
+            const record = await tx.contract.create({
+              data: {
+                organisationId: input.organisationId,
+                sourceType: "JSON",
+                clientName: proposal.contract.clientName,
+                poRefNo: proposal.contract.poRefNo,
+                poDate: proposal.contract.poDate,
+                paymentTerms: proposal.contract.paymentTerms,
+                deliveryTerms: proposal.contract.deliveryTerms,
+                total,
+                fieldData: buildContractFieldData({
+                  contract: proposal.contract,
+                  items: fieldItems,
+                }),
+                createdByClerkUserId: ctx.auth.clerkUserId,
+                lineItems: { create: lineItems },
+              },
+              include: {
+                lineItems: {
+                  orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+                },
+                auditEvents: { orderBy: { occurredAt: "desc" }, take: 30 },
+              },
+            });
+
+            await writeAuditEvent(tx, {
+              organisationId: input.organisationId,
+              actor: ctx.auth,
+              actorRole: membership.role,
+              action: "IMPORT",
+              entityType: "CONTRACT",
+              entityId: record.id,
+              entityLabel: record.poRefNo,
+              contractId: record.id,
+              afterState: {
+                clientName: record.clientName,
+                poRefNo: record.poRefNo,
+                poDate: record.poDate,
+                status: record.status,
+                sourceType: record.sourceType,
+                itemCount: proposal.items.length,
+                total: totalForJson,
+              },
+            });
+            records.push(mapContract(record));
+          }
+          return records;
+        });
+
+        for (const contract of created) {
+          publishRealtimeEvent({
+            entity: "contract",
+            action: "created",
+            entityId: contract.id,
+            organisationId: input.organisationId,
+            contractId: contract.id,
+          });
+        }
+
+        return {
+          contracts: created,
+          contractCount: created.length,
+          lineItemCount: input.proposals.reduce(
+            (count, proposal) => count + proposal.items.length,
+            0,
+          ),
+        };
       } catch (error) {
         return mapWriteError(error);
       }

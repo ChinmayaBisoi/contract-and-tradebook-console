@@ -69,10 +69,31 @@ const analytics = {
     { id: "contract_2", label: "PO-002 - Bravo" },
   ],
   contractsOverTime: [
-    { date: "2026-07-01", contractCount: 2 },
-    { date: "2026-07-02", contractCount: 1 },
+    {
+      date: "2026-07-01",
+      contractCount: 2,
+      lineItemCount: 6,
+      contractValue: 1500.75,
+    },
+    {
+      date: "2026-07-02",
+      contractCount: 1,
+      lineItemCount: 1,
+      contractValue: 999.99,
+    },
   ],
 };
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
 
 function renderAnalytics() {
   return render(
@@ -100,13 +121,13 @@ describe("Organisation overview analytics", () => {
     clientState.analyticsQuery.mockResolvedValue(analytics);
   });
 
-  it("renders the po-date chart with the full summary-sheet range by default", async () => {
+  it("renders the value-first po-date chart with the full summary-sheet range by default", async () => {
     renderAnalytics();
 
-    expect(await screen.findByText("Contracts over time")).toBeInTheDocument();
+    expect(await screen.findByText("Contract value over time")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Count of contracts by PO date from Jan 10, 2026 to Jul 10, 2026.",
+        "Contract value by PO date from Jan 10, 2026 to Jul 10, 2026.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue("2026-01-10")).toBeInTheDocument();
@@ -117,7 +138,7 @@ describe("Organisation overview analytics", () => {
     const user = userEvent.setup();
     renderAnalytics();
 
-    await screen.findByText("Contracts over time");
+    await screen.findByText("Contract value over time");
     await user.click(screen.getByRole("combobox", { name: "Status" }));
     await user.click(screen.getByRole("option", { name: "Finalized" }));
 
@@ -127,11 +148,24 @@ describe("Organisation overview analytics", () => {
     });
   });
 
+  it("shows the contract label in the trigger after a contract is selected", async () => {
+    const user = userEvent.setup();
+    renderAnalytics();
+
+    await screen.findByText("Contract value over time");
+    await user.click(screen.getByRole("combobox", { name: "Contract" }));
+    await user.click(screen.getAllByText("PO-001 - Acme")[0]!);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("PO-001 - Acme")[0]).toBeInTheDocument();
+    });
+  });
+
   it("refetches the timeline when the date preset changes", async () => {
     const user = userEvent.setup();
     renderAnalytics();
 
-    await screen.findByText("Contracts over time");
+    await screen.findByText("Contract value over time");
     await user.click(screen.getByRole("button", { name: "Last 30 days" }));
 
     await waitFor(() => {
@@ -142,6 +176,36 @@ describe("Organisation overview analytics", () => {
       expect(lastCall?.filters?.poDateTo).toEqual(
         new Date("2026-07-10T00:00:00.000Z"),
       );
+    });
+  });
+
+  it("keeps stable headings and previous chart content visible while filters refetch", async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferred<typeof analytics>();
+    clientState.analyticsQuery
+      .mockResolvedValueOnce(analytics)
+      .mockResolvedValueOnce(analytics)
+      .mockImplementationOnce(() => deferred.promise);
+    renderAnalytics();
+
+    expect(
+      await screen.findByText("Contract value over time"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Total contracts")).toBeInTheDocument();
+    expect(screen.getByText("42")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Last 30 days" }));
+
+    expect(screen.getByText("Contract value over time")).toBeInTheDocument();
+    expect(screen.getByText("Total contracts")).toBeInTheDocument();
+    expect(screen.getByText("42")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Updating chart…")).toBeInTheDocument();
+    });
+
+    deferred.resolve(analytics);
+    await waitFor(() => {
+      expect(screen.queryByText("Updating chart…")).not.toBeInTheDocument();
     });
   });
 
