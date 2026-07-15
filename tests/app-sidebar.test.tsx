@@ -62,7 +62,7 @@ describe("AppSidebar", () => {
       </SidebarProvider>,
     );
 
-    expect(screen.getByRole("link", { name: "Analytics" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
       "href",
       "/org/org_1",
     );
@@ -78,6 +78,10 @@ describe("AppSidebar", () => {
       "href",
       "/org/org_1/contracts",
     );
+    expect(screen.getByRole("link", { name: "Imports" })).toHaveAttribute(
+      "href",
+      "/org/org_1/imports",
+    );
   });
 
   it("does not show org links in sidebar on non-org routes", () => {
@@ -89,13 +93,14 @@ describe("AppSidebar", () => {
       </SidebarProvider>,
     );
 
-    expect(screen.queryByRole("link", { name: "Analytics" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Overview" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Audit Trail" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Team" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Contracts" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Imports" })).toBeNull();
   });
 
-  it("marks nested org section link active without activating analytics", () => {
+  it("marks nested org section link active without activating overview", () => {
     navigationMocks.pathname = "/org/org_1/contracts/detail";
 
     render(
@@ -107,7 +112,7 @@ describe("AppSidebar", () => {
     expect(screen.getByRole("link", { name: "Contracts" })).toHaveAttribute(
       "data-active",
     );
-    expect(screen.getByRole("link", { name: "Analytics" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute(
       "data-active",
       "true",
     );

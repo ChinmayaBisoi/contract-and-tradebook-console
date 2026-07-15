@@ -6,6 +6,7 @@ import {
   LayoutDashboardIcon,
   ScrollTextIcon,
   Settings2Icon,
+  UploadIcon,
   UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -71,6 +72,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         title: "Contracts",
         url: `${orgBasePath}/contracts`,
         icon: <FileTextIcon />,
+        match: "prefix" as const,
+      },
+      {
+        title: "Imports",
+        url: `${orgBasePath}/imports`,
+        icon: <UploadIcon />,
         match: "prefix" as const,
       },
     ]

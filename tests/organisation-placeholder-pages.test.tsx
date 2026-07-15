@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import OrganisationAuditTrailPage from "@/app/(protected)/org/[orgId]/audit-trail/page";
 import OrganisationContractsPage from "@/app/(protected)/org/[orgId]/contracts/page";
+import OrganisationImportsPage from "@/app/(protected)/org/[orgId]/imports/page";
 
 type OrganisationSectionPage = (props: {
   params: Promise<{ orgId: string }>;
@@ -48,9 +49,25 @@ describe("organisation placeholder pages", () => {
     );
   });
 
+  it("honestly explains that import processing is unavailable", async () => {
+    await renderPage(OrganisationImportsPage);
+
+    expect(screen.getByRole("heading", { name: "Imports" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /import processing is not connected.*this organisation yet/i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /analytics/i })).toHaveAttribute(
+      "href",
+      "/org/org_1",
+    );
+  });
+
   it.each([
     ["contracts", OrganisationContractsPage],
     ["audit trail", OrganisationAuditTrailPage],
+    ["imports", OrganisationImportsPage],
   ])("does not fabricate %s records or controls", async (_, Page) => {
     await renderPage(Page);
 
