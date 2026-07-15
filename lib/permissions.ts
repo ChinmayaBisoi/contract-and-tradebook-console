@@ -11,6 +11,12 @@ export const organisationActions = [
   "organisation:invitation:read",
   "organisation:invitation:update",
   "organisation:invitation:cancel",
+  "contract:read",
+  "contract:create",
+  "contract:update",
+  "line-item:read",
+  "line-item:create",
+  "line-item:update",
 ] as const;
 
 export type OrganisationAction = (typeof organisationActions)[number];
@@ -29,8 +35,19 @@ export const orgRolePermissions: Record<
     "organisation:user:status:update",
     "organisation:invitation:read",
     "organisation:invitation:update",
+    "contract:read",
+    "contract:create",
+    "contract:update",
+    "line-item:read",
+    "line-item:create",
+    "line-item:update",
   ]),
-  MEMBER: new Set(["organisation:read", "organisation:user:read"]),
+  MEMBER: new Set([
+    "organisation:read",
+    "organisation:user:read",
+    "contract:read",
+    "line-item:read",
+  ]),
 };
 
 export function getPermissionsForOrgRole(role: OrganisationUserRole) {
