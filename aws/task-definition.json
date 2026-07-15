@@ -38,6 +38,18 @@
         {
           "name": "NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL",
           "value": "__NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL__"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "__LOG_LEVEL__"
+        },
+        {
+          "name": "UPLOADTHING_WORKBOOK_ACL",
+          "value": "__UPLOADTHING_WORKBOOK_ACL__"
+        },
+        {
+          "name": "OPENAI_MAPPING_MODEL",
+          "value": "__OPENAI_MAPPING_MODEL__"
         }
       ],
       "secrets": [
@@ -56,6 +68,10 @@
         {
           "name": "UPLOADTHING_TOKEN",
           "valueFrom": "__UPLOADTHING_TOKEN_SECRET_ARN__"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "__OPENAI_API_KEY_SECRET_ARN__"
         }
       ],
       "logConfiguration": {

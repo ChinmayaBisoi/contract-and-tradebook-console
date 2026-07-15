@@ -14,6 +14,10 @@ describe("deploy workflow", () => {
     expect(workflow).toContain("./scripts/aws/deploy-ecs.sh");
     expect(workflow).toContain("Deployment URL");
     expect(workflow).toContain("${{ secrets." + "CLOUDFRONT_URL }}");
+    expect(workflow).toContain("OPENAI_API_KEY_SECRET_ARN");
+    expect(workflow).toContain("OPENAI_MAPPING_MODEL");
+    expect(workflow).toContain("UPLOADTHING_WORKBOOK_ACL");
+    expect(workflow).toContain("LOG_LEVEL");
     expect(deployScript).toContain("aws ecs update-service");
     expect(workflow).not.toContain("rsync -az");
     expect(workflow).not.toContain("EC2_HOST");

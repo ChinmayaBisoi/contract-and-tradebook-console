@@ -77,9 +77,13 @@ Set these in the `production` environment:
 - `DIRECT_URL_SECRET_ARN`
 - `CLERK_SECRET_KEY_SECRET_ARN`
 - `UPLOADTHING_TOKEN_SECRET_ARN`
+- `OPENAI_API_KEY_SECRET_ARN`
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL`
 - `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`
+- `LOG_LEVEL`
+- `UPLOADTHING_WORKBOOK_ACL`
+- `OPENAI_MAPPING_MODEL`
 
 ### AWS secret stores
 
@@ -91,6 +95,7 @@ At minimum, the ECS task should receive:
 - `DIRECT_URL`
 - `CLERK_SECRET_KEY`
 - `UPLOADTHING_TOKEN`
+- `OPENAI_API_KEY`
 
 ## 4) Deployment workflow
 
@@ -150,9 +155,13 @@ DATABASE_URL_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:dat
 DIRECT_URL_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:direct \
 CLERK_SECRET_KEY_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:clerk \
 UPLOADTHING_TOKEN_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:uploadthing \
+OPENAI_API_KEY_SECRET_ARN=arn:aws:secretsmanager:us-east-1:123456789012:secret:openai \
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_example \
 NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL=/dashboard \
 NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+LOG_LEVEL=info \
+UPLOADTHING_WORKBOOK_ACL=private \
+OPENAI_MAPPING_MODEL=gpt-5.4-mini \
 node scripts/aws/render-ecs-task-definition.mjs aws/task-definition.json /tmp/task-definition.rendered.json
 ```
 
