@@ -8,13 +8,17 @@ datasource db {
 }
 
 model Organisation {
-  id          String             @id @default(cuid())
-  name        String
-  description String?
-  users       OrganisationUser[]
-  invitations Invitation[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id               String             @id @default(cuid())
+  name             String
+  description      String?
+  users            OrganisationUser[]
+  invitations      Invitation[]
+  uploads          Upload[]
+  tradebookImports TradebookImport[]
+  contracts        Contract[]
+  contractEvents   ContractEvent[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([name])
 }
@@ -62,19 +66,171 @@ enum InvitationRole {
 }
 
 model Invitation {
-  id                 String               @id @default(cuid())
+  id                 String           @id @default(cuid())
   email              String
   organisationId     String
-  organisation       Organisation         @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  organisation       Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   role               InvitationRole
   inviterClerkUserId String
   inviterName        String
   inviterEmail       String
-  status             InvitationStatus     @default(PENDING)
+  status             InvitationStatus @default(PENDING)
   expiresAt          DateTime
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   @@index([email, status, createdAt])
   @@index([organisationId, status, createdAt])
+}
+
+enum UploadSourceType {
+  EXCEL
+  JSON
+  AI_EXTRACT
+}
+
+enum UploadStatus {
+  UPLOADED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+enum TradebookImportStatus {
+  PENDING
+  MAPPED
+  IMPORTED
+  FAILED
+}
+
+enum ContractStatus {
+  DRAFT
+  FINALIZED
+  ARCHIVED
+}
+
+enum ContractEventType {
+  CREATE
+  UPDATE
+  STATUS_CHANGE
+  DELETE
+  IMPORT
+}
+
+model Upload {
+  id                    String           @id @default(cuid())
+  organisationId        String
+  organisation          Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  uploadedByClerkUserId String
+  sourceType            UploadSourceType
+  status                UploadStatus     @default(UPLOADED)
+  fileName              String?
+  mimeType              String?
+  fileSizeBytes         Int?
+  storageKey            String?
+  blobUrl               String?
+  checksum              String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  tradebookImport       TradebookImport?
+  contracts             Contract[]
+  lineItems             LineItem[]
+
+  @@index([organisationId, createdAt])
+  @@index([organisationId, status, createdAt])
+  @@index([checksum])
+}
+
+model TradebookImport {
+  id                    String                @id @default(cuid())
+  organisationId        String
+  organisation          Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  uploadId              String                @unique
+  upload                Upload                @relation(fields: [uploadId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  status                TradebookImportStatus @default(PENDING)
+  sheetNames            Json
+  workbookSnapshot      Json?
+  formulaSnapshot       Json?
+  mappingConfig         Json?
+  validationErrors      Json?
+  importedContractCount Int                   @default(0)
+  importedLineItemCount Int                   @default(0)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  contracts             Contract[]
+  lineItems             LineItem[]
+
+  @@index([organisationId, createdAt])
+  @@index([organisationId, status, createdAt])
+}
+
+model Contract {
+  id                   String           @id @default(cuid())
+  organisationId       String
+  organisation         Organisation     @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  uploadId             String?
+  upload               Upload?          @relation(fields: [uploadId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  tradebookImportId    String?
+  tradebookImport      TradebookImport? @relation(fields: [tradebookImportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  status               ContractStatus   @default(DRAFT)
+  sourceType           UploadSourceType
+  clientName           String
+  poRefNo              String
+  poDate               DateTime
+  paymentTerms         String?
+  deliveryTerms        String?
+  fieldData            Json
+  createdByClerkUserId String
+  finalizedAt          DateTime?
+  archivedAt           DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  lineItems            LineItem[]
+  events               ContractEvent[]
+
+  @@unique([organisationId, poRefNo])
+  @@index([organisationId, status, createdAt])
+  @@index([organisationId, clientName])
+  @@index([uploadId])
+  @@index([tradebookImportId])
+}
+
+model LineItem {
+  id                String           @id @default(cuid())
+  contractId        String
+  contract          Contract         @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  uploadId          String?
+  upload            Upload?          @relation(fields: [uploadId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  tradebookImportId String?
+  tradebookImport   TradebookImport? @relation(fields: [tradebookImportId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  sourceRowRef      Json?
+  workbookItemId    String?
+  description       String
+  quantity          Decimal
+  quantityUnit      String?
+  unitPrice         Decimal
+  pricingUnit       String?
+  total             Decimal?
+  sortOrder         Int              @default(0)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([contractId, sortOrder])
+  @@index([uploadId])
+  @@index([tradebookImportId])
+}
+
+model ContractEvent {
+  id               String            @id @default(cuid())
+  contractId       String
+  contract         Contract          @relation(fields: [contractId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  organisationId   String
+  organisation     Organisation      @relation(fields: [organisationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  actorClerkUserId String?
+  eventType        ContractEventType
+  payload          Json?
+  createdAt        DateTime          @default(now())
+
+  @@index([contractId, createdAt])
+  @@index([organisationId, createdAt])
 }
