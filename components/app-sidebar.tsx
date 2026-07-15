@@ -57,15 +57,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         match: "exact" as const,
       },
       {
-        title: "Audit Trail",
-        url: `${orgBasePath}/audit-trail`,
-        icon: <ScrollTextIcon />,
-        match: "prefix" as const,
-      },
-      {
-        title: "Team",
-        url: `${orgBasePath}/teams`,
-        icon: <UsersIcon />,
+        title: "Imports",
+        url: `${orgBasePath}/imports`,
+        icon: <UploadIcon />,
         match: "prefix" as const,
       },
       {
@@ -74,10 +68,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         icon: <FileTextIcon />,
         match: "prefix" as const,
       },
+
       {
-        title: "Imports",
-        url: `${orgBasePath}/imports`,
-        icon: <UploadIcon />,
+        title: "Team",
+        url: `${orgBasePath}/teams`,
+        icon: <UsersIcon />,
+        match: "prefix" as const,
+      },
+      {
+        title: "Audit Trail",
+        url: `${orgBasePath}/audit-trail`,
+        icon: <ScrollTextIcon />,
         match: "prefix" as const,
       },
     ]
