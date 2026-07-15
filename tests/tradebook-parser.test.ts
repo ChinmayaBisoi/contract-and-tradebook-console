@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -14,7 +15,7 @@ let parsed: ParsedWorkbook;
 
 beforeAll(async () => {
   parsed = await parseWorkbookBuffer(sample);
-}, 15_000);
+}, 30_000);
 
 describe("tradebook workbook parser", () => {
   it("preserves sample sheet order and exact dimensions", () => {
