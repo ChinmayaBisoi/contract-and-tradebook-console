@@ -27,6 +27,14 @@ function messageFrom(error: unknown) {
     : "The workbook could not be uploaded.";
 }
 
+function uploadConfirmationError(uploaded: unknown) {
+  const file = Array.isArray(uploaded) ? uploaded[0] : null;
+  if (file && typeof file === "object" && "error" in file && file.error) {
+    return String(file.error);
+  }
+  return "UploadThing did not confirm the workbook upload.";
+}
+
 export function TradebookUpload({
   organisationId,
 }: {
@@ -67,7 +75,7 @@ export function TradebookUpload({
       uploadId = created.uploadId;
       const uploaded = await startUpload([file], { organisationId, uploadId });
       if (!uploaded?.[0]?.serverData?.importReady) {
-        throw new Error("Private storage did not confirm the workbook upload.");
+        throw new Error(uploadConfirmationError(uploaded));
       }
       setProgress(100);
       await prepare.mutateAsync({ organisationId, importId: uploadId });

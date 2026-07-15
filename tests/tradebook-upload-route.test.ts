@@ -8,11 +8,11 @@ const source = readFileSync(
 );
 
 describe("tradebook UploadThing route", () => {
-  it("uses a single private 32 MB workbook endpoint", () => {
+  it("uses a single configurable 32 MB workbook endpoint", () => {
     expect(source).toContain("tradebookWorkbook");
     expect(source).toContain('maxFileSize: "32MB"');
     expect(source).toContain("maxFileCount: 1");
-    expect(source).toContain('acl: "private"');
+    expect(source).toContain("getWorkbookUploadAcl()");
     expect(source).toContain('endsWith(".xlsx")');
   });
 

@@ -27,8 +27,9 @@ cp .env.example .env
 ```
 
 The app expects `DATABASE_URL` when Prisma is used at runtime. Excel imports
-also require an UploadThing account with private-file ACL support enabled and a
-valid `UPLOADTHING_TOKEN`. The app does not fall back to public workbook storage.
+require a valid `UPLOADTHING_TOKEN`. Private workbook storage is the default
+(`UPLOADTHING_WORKBOOK_ACL=private`, or unset). On UploadThing's free tier, set
+`UPLOADTHING_WORKBOOK_ACL=public-read` in `.env` for local development.
 
 `OPENAI_API_KEY` is optional. When configured, the review workspace can request
 suggestions for required columns that deterministic aliases did not match. Set

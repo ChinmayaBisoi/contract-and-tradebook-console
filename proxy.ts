@@ -1,6 +1,21 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export default clerkMiddleware();
+import { getOrCreateRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
+
+export default clerkMiddleware((_, req) => {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set(
+    REQUEST_ID_HEADER,
+    getOrCreateRequestId(requestHeaders),
+  );
+
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
+});
 
 export const config = {
   matcher: [
