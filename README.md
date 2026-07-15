@@ -26,7 +26,41 @@ Copy the example environment file and fill in the required values:
 cp .env.example .env
 ```
 
-The app expects `DATABASE_URL` when Prisma is used at runtime.
+The app expects `DATABASE_URL` when Prisma is used at runtime. Excel imports
+also require an UploadThing account with private-file ACL support enabled and a
+valid `UPLOADTHING_TOKEN`. The app does not fall back to public workbook storage.
+
+`OPENAI_API_KEY` is optional. When configured, the review workspace can request
+suggestions for required columns that deterministic aliases did not match. Set
+`OPENAI_MAPPING_MODEL` to override the default `gpt-5-nano`. Without a key,
+manual sheet and column mapping remains fully available.
+
+## Excel Tradebook Imports
+
+Open an organisation's **Imports** page and select one `.xlsx` workbook up to
+32 MB. The workflow is review-first:
+
+1. The app creates an organisation-scoped `Upload` record before requesting a
+   client-side presigned upload.
+2. UploadThing stores the original workbook privately. Server reads use a
+   short-lived signed URL; the private source URL is never exposed as a public
+   download.
+3. ExcelJS snapshots sheet order, values, dates, formulas, and cached results.
+   HyperFormula recalculates supported formulas after quantity or price edits
+   without replacing the saved formula text.
+4. Deterministic mappings run first. Optional AI receives only sheet names,
+   candidate headers, and the first 10 rows, uses structured output with
+   storage disabled, and produces suggestions that a user must accept.
+5. The reviewer selects one workbook organisation, confirms mappings, edits or
+   discards invalid rows, and saves sparse changes for server-side validation.
+6. Commit creates contracts, line items, provenance links, audit events, and
+   final statuses in one database transaction. Existing PO references are
+   blocking errors and are never overwritten.
+
+Parsing or unreadable-source failures mark the upload and import `FAILED`.
+Retryable database failures leave a validated import `MAPPED`, so commit can be
+retried safely. Repeating commit after a successful import returns the existing
+terminal counts without creating duplicate records.
 
 ## Database
 
